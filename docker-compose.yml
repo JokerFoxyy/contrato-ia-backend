@@ -1,19 +1,17 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:16-alpine
     container_name: contratoai-postgres
     environment:
-      POSTGRES_DB: contratoiadb
       POSTGRES_USER: contrato_user
       POSTGRES_PASSWORD: contrato_pass
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U contrato_user -d contratoiadb"]
+      test: ["CMD-SHELL", "pg_isready -U contrato_user"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,7 +24,7 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/contratoiadb
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloakdb
       KC_DB_USERNAME: contrato_user
       KC_DB_PASSWORD: contrato_pass
       KC_HTTP_PORT: 8180
