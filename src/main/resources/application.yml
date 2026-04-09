@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: contrato-ia-backend
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/contratoiadb}
+    username: ${DB_USERNAME:contrato_user}
+    password: ${DB_PASSWORD:contrato_pass}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate  # Flyway gerencia o schema
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Substitua pela URL do seu realm Keycloak
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/contrato-ia}
+          jwk-set-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/contrato-ia}/protocol/openid-connect/certs
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+# Claude API
+claude:
+  api:
+    key: ${CLAUDE_API_KEY:}
+    base-url: https://api.anthropic.com
+    model: claude-sonnet-4-6
+    max-tokens: 4096
+
+# Cloudflare R2
+r2:
+  access-key: ${R2_ACCESS_KEY:}
+  secret-key: ${R2_SECRET_KEY:}
+  endpoint: ${R2_ENDPOINT:}
+  bucket: ${R2_BUCKET:contrato-ia-docs}
+
+# Stripe
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY:}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  prices:
+    pro: ${STRIPE_PRICE_PRO:}
+    business: ${STRIPE_PRICE_BUSINESS:}
+
+# CORS
+cors:
+  allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
+
+logging:
+  level:
+    br.com.contratoai: INFO
+    org.springframework.security: WARN

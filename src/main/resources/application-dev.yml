@@ -1,0 +1,9 @@
+spring:
+  jpa:
+    show-sql: true
+
+logging:
+  level:
+    br.com.contratoai: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG

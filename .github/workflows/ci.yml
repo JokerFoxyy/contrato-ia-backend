@@ -1,0 +1,49 @@
+name: CI - Backend
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: contratoiadb_test
+          POSTGRES_USER: contrato_user
+          POSTGRES_PASSWORD: contrato_pass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and Test
+        run: mvn clean verify
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/contratoiadb_test
+          DB_USERNAME: contrato_user
+          DB_PASSWORD: contrato_pass
+          KEYCLOAK_ISSUER_URI: http://localhost:8180/realms/contrato-ia
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+
+      - name: Build Docker Image
+        if: github.ref == 'refs/heads/main'
+        run: mvn spring-boot:build-image -DskipTests
