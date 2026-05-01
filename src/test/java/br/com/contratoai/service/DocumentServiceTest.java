@@ -51,6 +51,12 @@ class DocumentServiceTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private PdfGenerationService pdfGenerationService;
+
+    @Mock
+    private DocxGenerationService docxGenerationService;
+
     @InjectMocks
     private DocumentService documentService;
 
@@ -332,5 +338,112 @@ class DocumentServiceTest {
         assertThatThrownBy(() -> documentService.getDocument(docId, jwt))
             .isInstanceOf(DocumentNotFoundException.class)
             .hasMessageContaining("Documento não encontrado");
+    }
+
+    // === Export PDF/DOCX tests ===
+
+    @Test
+    @DisplayName("exportPdf - should generate PDF for DRAFT document")
+    void exportPdf_draftDocument() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato PDF")
+            .userDescription("descricao")
+            .generatedContent("Conteudo gerado pelo Claude")
+            .status(DocumentStatus.DRAFT)
+            .build();
+
+        byte[] expectedPdf = new byte[]{37, 80, 68, 70}; // %PDF
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+        when(pdfGenerationService.generate("Conteudo gerado pelo Claude", "Contrato PDF", docId))
+            .thenReturn(expectedPdf);
+
+        byte[] result = documentService.exportPdf(docId, jwt);
+
+        assertThat(result).isEqualTo(expectedPdf);
+        verify(pdfGenerationService).generate("Conteudo gerado pelo Claude", "Contrato PDF", docId);
+    }
+
+    @Test
+    @DisplayName("exportDocx - should generate DOCX for DRAFT document")
+    void exportDocx_draftDocument() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato DOCX")
+            .userDescription("descricao")
+            .generatedContent("Conteudo gerado pelo Claude")
+            .status(DocumentStatus.DRAFT)
+            .build();
+
+        byte[] expectedDocx = new byte[]{80, 75, 3, 4}; // PK (ZIP)
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+        when(docxGenerationService.generate("Conteudo gerado pelo Claude", "Contrato DOCX", docId))
+            .thenReturn(expectedDocx);
+
+        byte[] result = documentService.exportDocx(docId, jwt);
+
+        assertThat(result).isEqualTo(expectedDocx);
+    }
+
+    @Test
+    @DisplayName("exportPdf - should throw for GENERATING status")
+    void exportPdf_generatingStatus() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .generatedContent(null)
+            .status(DocumentStatus.GENERATING)
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+
+        assertThatThrownBy(() -> documentService.exportPdf(docId, jwt))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("não pode ser exportado");
+    }
+
+    @Test
+    @DisplayName("exportPdf - should throw for FAILED status")
+    void exportPdf_failedStatus() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .generatedContent(null)
+            .status(DocumentStatus.FAILED)
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+
+        assertThatThrownBy(() -> documentService.exportPdf(docId, jwt))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("não pode ser exportado");
+    }
+
+    @Test
+    @DisplayName("exportPdf - should throw when document not found")
+    void exportPdf_notFound() {
+        UUID docId = UUID.randomUUID();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.exportPdf(docId, jwt))
+            .isInstanceOf(DocumentNotFoundException.class);
     }
 }

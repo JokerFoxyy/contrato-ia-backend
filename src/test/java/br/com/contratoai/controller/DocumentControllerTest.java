@@ -2,6 +2,7 @@ package br.com.contratoai.controller;
 
 import br.com.contratoai.domain.enums.DocumentStatus;
 import br.com.contratoai.dto.DocumentResponseDTO;
+import br.com.contratoai.exception.DocumentNotFoundException;
 import br.com.contratoai.service.DocumentService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
@@ -176,10 +177,10 @@ class DocumentControllerTest {
     }
 
     @Test
-    @DisplayName("GET /v1/documents/{id} - should return 500 when document not found")
+    @DisplayName("GET /v1/documents/{id} - should return 404 when document not found")
     void getDocument_notFound() throws Exception {
         when(documentService.getDocument(any(UUID.class), any()))
-            .thenThrow(new RuntimeException("Documento não encontrado"));
+            .thenThrow(new DocumentNotFoundException("Documento não encontrado"));
 
         mockMvc.perform(get("/v1/documents/{id}", UUID.randomUUID()))
             .andExpect(status().isNotFound());

@@ -13,6 +13,7 @@ import br.com.contratoai.repository.DocumentRepository;
 import br.com.contratoai.repository.TemplateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -27,10 +28,17 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DocumentService {
 
+    private static final Set<DocumentStatus> EXPORTABLE_STATUSES = Set.of(
+            DocumentStatus.DRAFT, DocumentStatus.FINALIZED, DocumentStatus.SIGNING,
+            DocumentStatus.SIGNED, DocumentStatus.ARCHIVED
+    );
+
     private final DocumentRepository documentRepository;
     private final TemplateRepository templateRepository;
     private final ClaudeService claudeService;
     private final UserService userService;
+    private final PdfGenerationService pdfGenerationService;
+    private final DocxGenerationService docxGenerationService;
 
     @Transactional
     public DocumentResponseDTO generate(DocumentRequestDTO request, Jwt jwt) {
@@ -96,6 +104,42 @@ public class DocumentService {
         Document doc = documentRepository.findByIdAndUserId(documentId, user.getId())
             .orElseThrow(() -> new DocumentNotFoundException("Documento não encontrado: " + documentId));
         return toResponseDTO(doc);
+    }
+
+    /**
+     * Gera o PDF do documento sob demanda.
+     * Requer que o documento tenha conteudo gerado (status DRAFT ou posterior).
+     */
+    @Transactional(readOnly = true)
+    public byte[] exportPdf(UUID documentId, Jwt jwt) {
+        Document doc = getExportableDocument(documentId, jwt);
+        return pdfGenerationService.generate(doc.getGeneratedContent(), doc.getTitle(), doc.getId());
+    }
+
+    /**
+     * Gera o DOCX do documento sob demanda.
+     */
+    @Transactional(readOnly = true)
+    public byte[] exportDocx(UUID documentId, Jwt jwt) {
+        Document doc = getExportableDocument(documentId, jwt);
+        return docxGenerationService.generate(doc.getGeneratedContent(), doc.getTitle(), doc.getId());
+    }
+
+    private Document getExportableDocument(UUID documentId, Jwt jwt) {
+        User user = userService.getOrCreateUser(jwt);
+        Document doc = documentRepository.findByIdAndUserId(documentId, user.getId())
+                .orElseThrow(() -> new DocumentNotFoundException("Documento não encontrado: " + documentId));
+
+        if (!EXPORTABLE_STATUSES.contains(doc.getStatus())) {
+            throw new IllegalStateException(
+                    "Documento com status " + doc.getStatus() + " não pode ser exportado. Aguarde a geração ser concluída.");
+        }
+
+        if (doc.getGeneratedContent() == null || doc.getGeneratedContent().isBlank()) {
+            throw new IllegalStateException("Documento sem conteúdo gerado para exportação.");
+        }
+
+        return doc;
     }
 
     private String generateTitle(String description) {
