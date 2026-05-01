@@ -43,12 +43,15 @@ claude:
     model: claude-sonnet-4-6
     max-tokens: 4096
 
-# Cloudflare R2
-r2:
-  access-key: ${R2_ACCESS_KEY:}
-  secret-key: ${R2_SECRET_KEY:}
-  endpoint: ${R2_ENDPOINT:}
-  bucket: ${R2_BUCKET:contrato-ia-docs}
+# AWS S3
+aws:
+  s3:
+    region: ${AWS_REGION:us-east-1}
+    bucket: ${AWS_S3_BUCKET:contrato-ia-docs}
+    endpoint: ${AWS_S3_ENDPOINT:}
+    access-key: ${AWS_ACCESS_KEY_ID:}
+    secret-key: ${AWS_SECRET_ACCESS_KEY:}
+    presigned-url-expiry-hours: ${AWS_S3_PRESIGNED_EXPIRY_HOURS:24}
 
 # Stripe
 stripe:

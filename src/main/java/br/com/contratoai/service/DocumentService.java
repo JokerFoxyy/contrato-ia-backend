@@ -39,6 +39,7 @@ public class DocumentService {
     private final UserService userService;
     private final PdfGenerationService pdfGenerationService;
     private final DocxGenerationService docxGenerationService;
+    private final S3StorageService s3StorageService;
 
     @Transactional
     public DocumentResponseDTO generate(DocumentRequestDTO request, Jwt jwt) {
@@ -79,6 +80,17 @@ public class DocumentService {
             document.setGeneratedContent(generatedContent);
             document.setStatus(DocumentStatus.DRAFT);
             document = documentRepository.save(document);
+
+            // Gera e faz upload do PDF e DOCX para S3
+            uploadDocumentFiles(document, user.getId());
+            document = documentRepository.save(document);
+
+        } catch (ClaudeApiException e) {
+            log.error("Falha ao gerar documento via IA. userId={}, documentId={}, erro={}",
+                user.getId(), document.getId(), e.getMessage(), e);
+            document.setStatus(DocumentStatus.FAILED);
+            documentRepository.save(document);
+            throw e;
         } catch (Exception e) {
             log.error("Falha ao gerar documento via IA. userId={}, documentId={}, erro={}",
                 user.getId(), document.getId(), e.getMessage(), e);
@@ -107,8 +119,8 @@ public class DocumentService {
     }
 
     /**
-     * Gera o PDF do documento sob demanda.
-     * Requer que o documento tenha conteudo gerado (status DRAFT ou posterior).
+     * Gera o PDF do documento.
+     * Se já existe no S3, gera nova presigned URL. Caso contrário, gera on-the-fly.
      */
     @Transactional(readOnly = true)
     public byte[] exportPdf(UUID documentId, Jwt jwt) {
@@ -117,12 +129,69 @@ public class DocumentService {
     }
 
     /**
-     * Gera o DOCX do documento sob demanda.
+     * Gera o DOCX do documento.
      */
     @Transactional(readOnly = true)
     public byte[] exportDocx(UUID documentId, Jwt jwt) {
         Document doc = getExportableDocument(documentId, jwt);
         return docxGenerationService.generate(doc.getGeneratedContent(), doc.getTitle(), doc.getId());
+    }
+
+    /**
+     * Retorna presigned URL do PDF no S3 (se existir), null caso contrário.
+     */
+    @Transactional(readOnly = true)
+    public String getPdfPresignedUrl(UUID documentId, Jwt jwt) {
+        Document doc = getExportableDocument(documentId, jwt);
+        if (doc.getPdfS3Key() != null) {
+            return s3StorageService.generatePresignedUrl(doc.getPdfS3Key()).toString();
+        }
+        return null;
+    }
+
+    /**
+     * Retorna presigned URL do DOCX no S3 (se existir), null caso contrário.
+     */
+    @Transactional(readOnly = true)
+    public String getDocxPresignedUrl(UUID documentId, Jwt jwt) {
+        Document doc = getExportableDocument(documentId, jwt);
+        if (doc.getDocxS3Key() != null) {
+            return s3StorageService.generatePresignedUrl(doc.getDocxS3Key()).toString();
+        }
+        return null;
+    }
+
+    /**
+     * Gera PDF e DOCX, faz upload para S3 e salva as keys no documento.
+     * Se o upload falhar, o documento permanece em DRAFT sem arquivos no S3
+     * (o usuário ainda pode exportar sob demanda).
+     */
+    private void uploadDocumentFiles(Document document, UUID userId) {
+        try {
+            // Gera PDF
+            byte[] pdfBytes = pdfGenerationService.generate(
+                    document.getGeneratedContent(), document.getTitle(), document.getId());
+            String pdfKey = s3StorageService.uploadDocument(
+                    userId, document.getId(), pdfBytes, "application/pdf", "pdf");
+            document.setPdfS3Key(pdfKey);
+            document.setPdfUrl(s3StorageService.generatePresignedUrl(pdfKey).toString());
+
+            // Gera DOCX
+            byte[] docxBytes = docxGenerationService.generate(
+                    document.getGeneratedContent(), document.getTitle(), document.getId());
+            String docxKey = s3StorageService.uploadDocument(
+                    userId, document.getId(), docxBytes,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx");
+            document.setDocxS3Key(docxKey);
+            document.setDocxUrl(s3StorageService.generatePresignedUrl(docxKey).toString());
+
+            log.info("Upload PDF/DOCX concluído para documento {}", document.getId());
+
+        } catch (Exception e) {
+            // Upload falhou mas o documento já está em DRAFT — não bloqueia o fluxo
+            log.warn("Falha no upload S3 para documento {}. Export sob demanda continua disponível. Erro: {}",
+                    document.getId(), e.getMessage(), e);
+        }
     }
 
     private Document getExportableDocument(UUID documentId, Jwt jwt) {

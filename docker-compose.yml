@@ -34,5 +34,24 @@ services:
       postgres:
         condition: service_healthy
 
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: contratoai-localstack
+    environment:
+      SERVICES: s3
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - ./init-localstack.sh:/etc/localstack/init/ready.d/init-localstack.sh
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3 ls"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
+  localstack_data:

@@ -105,10 +105,15 @@
             <version>${stripe.version}</version>
         </dependency>
 
-        <!-- ===== AWS S3 SDK (para Cloudflare R2) ===== -->
+        <!-- ===== AWS SDK v2 (S3 + Presigner) ===== -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
+            <version>${awssdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3-transfer-manager</artifactId>
             <version>${awssdk.version}</version>
         </dependency>
 

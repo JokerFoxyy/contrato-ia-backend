@@ -57,6 +57,9 @@ class DocumentServiceTest {
     @Mock
     private DocxGenerationService docxGenerationService;
 
+    @Mock
+    private S3StorageService s3StorageService;
+
     @InjectMocks
     private DocumentService documentService;
 
@@ -113,7 +116,7 @@ class DocumentServiceTest {
         assertThat(result.title()).isEqualTo("Contrato TI");
         assertThat(result.generatedContent()).isEqualTo("CONTRATO DE PRESTACAO DE SERVICOS...");
         assertThat(result.status()).isEqualTo(DocumentStatus.DRAFT);
-        verify(documentRepository, times(2)).save(any(Document.class));
+        verify(documentRepository, times(3)).save(any(Document.class)); // GENERATING, DRAFT, after S3 upload
     }
 
     @Test
@@ -251,7 +254,7 @@ class DocumentServiceTest {
 
         assertThatThrownBy(() -> documentService.generate(request, jwt))
             .isInstanceOf(ClaudeApiException.class)
-            .hasMessageContaining("Erro ao gerar documento com IA");
+            .hasMessageContaining("API timeout");
 
         // Verifica que o documento foi salvo com status FAILED
         verify(documentRepository, atLeast(2)).save(argThat(doc ->

@@ -2,6 +2,15 @@ spring:
   jpa:
     show-sql: true
 
+# LocalStack S3 para desenvolvimento local
+aws:
+  s3:
+    endpoint: http://localhost:4566
+    access-key: test
+    secret-key: test
+    bucket: contrato-ia-docs
+    region: us-east-1
+
 logging:
   level:
     br.com.contratoai: DEBUG
