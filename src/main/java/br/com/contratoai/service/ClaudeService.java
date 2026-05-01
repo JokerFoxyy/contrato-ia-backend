@@ -1,13 +1,19 @@
 package br.com.contratoai.service;
 
+import br.com.contratoai.exception.ClaudeApiException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.util.retry.Retry;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 public class ClaudeService {
 
@@ -36,14 +42,33 @@ public class ClaudeService {
             )
         );
 
-        Map<String, Object> response = claudeWebClient.post()
-            .uri("/v1/messages")
-            .bodyValue(requestBody)
-            .retrieve()
-            .bodyToMono(Map.class)
-            .block();
+        try {
+            Map<String, Object> response = claudeWebClient.post()
+                .uri("/v1/messages")
+                .bodyValue(requestBody)
+                .retrieve()
+                .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                    clientResponse.bodyToMono(String.class)
+                        .map(body -> new ClaudeApiException("Claude API erro 4xx: " + body))
+                )
+                .bodyToMono(Map.class)
+                .retryWhen(Retry.backoff(2, Duration.ofSeconds(2))
+                    .filter(throwable -> throwable instanceof WebClientResponseException wcre
+                        && wcre.getStatusCode().is5xxServerError())
+                    .onRetryExhaustedThrow((spec, signal) ->
+                        new ClaudeApiException("Claude API indisponível após " + spec.maxAttempts + " tentativas", signal.failure()))
+                    .doBeforeRetry(signal ->
+                        log.warn("Retry #{} para Claude API após erro: {}", signal.totalRetries() + 1, signal.failure().getMessage()))
+                )
+                .block();
 
-        return extractContent(response);
+            return extractContent(response);
+
+        } catch (ClaudeApiException e) {
+            throw e; // Já é nossa exceção tipada
+        } catch (Exception e) {
+            throw new ClaudeApiException("Falha na comunicação com a Claude API: " + e.getMessage(), e);
+        }
     }
 
     private String buildSystemPrompt() {
@@ -77,12 +102,12 @@ public class ClaudeService {
     @SuppressWarnings("unchecked")
     private String extractContent(Map<String, Object> response) {
         if (response == null) {
-            throw new RuntimeException("Resposta vazia da Claude API");
+            throw new ClaudeApiException("Resposta vazia da Claude API");
         }
 
         List<Map<String, Object>> content = (List<Map<String, Object>>) response.get("content");
         if (content == null || content.isEmpty()) {
-            throw new RuntimeException("Conteúdo vazio na resposta da Claude API");
+            throw new ClaudeApiException("Conteúdo vazio na resposta da Claude API");
         }
 
         return (String) content.get(0).get("text");

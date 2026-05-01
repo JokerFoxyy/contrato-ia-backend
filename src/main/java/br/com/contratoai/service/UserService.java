@@ -2,6 +2,7 @@ package br.com.contratoai.service;
 
 import br.com.contratoai.domain.entity.User;
 import br.com.contratoai.domain.enums.Plan;
+import br.com.contratoai.exception.UserNotFoundException;
 import br.com.contratoai.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -34,7 +35,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public User findById(UUID id) {
         return userRepository.findById(id)
-            .orElseThrow(() -> new RuntimeException("Usuário não encontrado: " + id));
+            .orElseThrow(() -> new UserNotFoundException("Usuário não encontrado: " + id));
     }
 
     public boolean canCreateDocument(User user, long documentsThisMonth) {

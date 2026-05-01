@@ -7,6 +7,9 @@ import br.com.contratoai.domain.enums.DocumentStatus;
 import br.com.contratoai.domain.enums.Plan;
 import br.com.contratoai.dto.DocumentRequestDTO;
 import br.com.contratoai.dto.DocumentResponseDTO;
+import br.com.contratoai.exception.ClaudeApiException;
+import br.com.contratoai.exception.DocumentNotFoundException;
+import br.com.contratoai.exception.PlanLimitExceededException;
 import br.com.contratoai.repository.DocumentRepository;
 import br.com.contratoai.repository.TemplateRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,8 +33,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -180,7 +182,7 @@ class DocumentServiceTest {
         when(userService.canCreateDocument(user, 3L)).thenReturn(false);
 
         assertThatThrownBy(() -> documentService.generate(request, jwt))
-            .isInstanceOf(RuntimeException.class)
+            .isInstanceOf(PlanLimitExceededException.class)
             .hasMessageContaining("Limite de 3 documentos/mês do plano gratuito atingido");
     }
 
@@ -233,7 +235,7 @@ class DocumentServiceTest {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
         when(documentRepository.countDocumentsSince(eq(user.getId()), any(LocalDateTime.class))).thenReturn(0L);
         when(userService.canCreateDocument(user, 0L)).thenReturn(true);
-        when(claudeService.generateDocument(anyString())).thenThrow(new RuntimeException("API timeout"));
+        when(claudeService.generateDocument(anyString())).thenThrow(new ClaudeApiException("API timeout"));
 
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
             Document doc = invocation.getArgument(0);
@@ -242,8 +244,13 @@ class DocumentServiceTest {
         });
 
         assertThatThrownBy(() -> documentService.generate(request, jwt))
-            .isInstanceOf(RuntimeException.class)
+            .isInstanceOf(ClaudeApiException.class)
             .hasMessageContaining("Erro ao gerar documento com IA");
+
+        // Verifica que o documento foi salvo com status FAILED
+        verify(documentRepository, atLeast(2)).save(argThat(doc ->
+            doc.getStatus() == DocumentStatus.FAILED || doc.getStatus() == DocumentStatus.GENERATING
+        ));
     }
 
     @Test
@@ -323,7 +330,7 @@ class DocumentServiceTest {
         when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> documentService.getDocument(docId, jwt))
-            .isInstanceOf(RuntimeException.class)
-            .hasMessage("Documento não encontrado");
+            .isInstanceOf(DocumentNotFoundException.class)
+            .hasMessageContaining("Documento não encontrado");
     }
 }

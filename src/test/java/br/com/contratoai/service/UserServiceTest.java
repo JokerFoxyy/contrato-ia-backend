@@ -2,6 +2,7 @@ package br.com.contratoai.service;
 
 import br.com.contratoai.domain.entity.User;
 import br.com.contratoai.domain.enums.Plan;
+import br.com.contratoai.exception.UserNotFoundException;
 import br.com.contratoai.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -139,7 +140,7 @@ class UserServiceTest {
         when(userRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.findById(id))
-            .isInstanceOf(RuntimeException.class)
+            .isInstanceOf(UserNotFoundException.class)
             .hasMessageContaining("Usuário não encontrado");
     }
 }

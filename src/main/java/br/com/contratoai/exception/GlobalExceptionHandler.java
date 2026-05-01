@@ -1,5 +1,6 @@
 package br.com.contratoai.exception;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -30,16 +32,41 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(DocumentNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleDocumentNotFound(DocumentNotFoundException ex) {
+        log.warn("Documento não encontrado: {}", ex.getMessage());
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleUserNotFound(UserNotFoundException ex) {
+        log.warn("Usuário não encontrado: {}", ex.getMessage());
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(PlanLimitExceededException.class)
+    public ResponseEntity<Map<String, Object>> handlePlanLimit(PlanLimitExceededException ex) {
+        log.info("Limite de plano atingido: {}", ex.getMessage());
+        return buildResponse(HttpStatus.PAYMENT_REQUIRED, ex.getMessage());
+    }
+
+    @ExceptionHandler(ClaudeApiException.class)
+    public ResponseEntity<Map<String, Object>> handleClaudeApi(ClaudeApiException ex) {
+        log.error("Erro na Claude API: {}", ex.getMessage(), ex);
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE, "Serviço de geração temporariamente indisponível. Tente novamente.");
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
-        HttpStatus status = ex.getMessage().contains("não encontrado")
-            ? HttpStatus.NOT_FOUND
-            : HttpStatus.INTERNAL_SERVER_ERROR;
+        log.error("Erro interno não tratado: {}", ex.getMessage(), ex);
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Erro interno do servidor");
+    }
 
+    private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, String message) {
         return ResponseEntity.status(status).body(Map.of(
             "timestamp", LocalDateTime.now().toString(),
             "status", status.value(),
-            "error", ex.getMessage()
+            "error", message
         ));
     }
 }

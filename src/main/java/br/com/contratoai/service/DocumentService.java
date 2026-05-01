@@ -6,9 +6,13 @@ import br.com.contratoai.domain.entity.User;
 import br.com.contratoai.domain.enums.DocumentStatus;
 import br.com.contratoai.dto.DocumentRequestDTO;
 import br.com.contratoai.dto.DocumentResponseDTO;
+import br.com.contratoai.exception.ClaudeApiException;
+import br.com.contratoai.exception.DocumentNotFoundException;
+import br.com.contratoai.exception.PlanLimitExceededException;
 import br.com.contratoai.repository.DocumentRepository;
 import br.com.contratoai.repository.TemplateRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -18,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DocumentService {
@@ -38,7 +43,7 @@ public class DocumentService {
         );
 
         if (!userService.canCreateDocument(user, docsThisMonth)) {
-            throw new RuntimeException(
+            throw new PlanLimitExceededException(
                 "Limite de 3 documentos/mês do plano gratuito atingido. Faça upgrade para o plano Pro."
             );
         }
@@ -65,12 +70,15 @@ public class DocumentService {
             String generatedContent = claudeService.generateDocument(request.description());
             document.setGeneratedContent(generatedContent);
             document.setStatus(DocumentStatus.DRAFT);
+            document = documentRepository.save(document);
         } catch (Exception e) {
-            document.setStatus(DocumentStatus.DRAFT);
-            throw new RuntimeException("Erro ao gerar documento com IA: " + e.getMessage(), e);
+            log.error("Falha ao gerar documento via IA. userId={}, documentId={}, erro={}",
+                user.getId(), document.getId(), e.getMessage(), e);
+            document.setStatus(DocumentStatus.FAILED);
+            documentRepository.save(document);
+            throw new ClaudeApiException("Erro ao gerar documento com IA: " + e.getMessage(), e);
         }
 
-        document = documentRepository.save(document);
         return toResponseDTO(document);
     }
 
@@ -86,12 +94,11 @@ public class DocumentService {
     public DocumentResponseDTO getDocument(UUID documentId, Jwt jwt) {
         User user = userService.getOrCreateUser(jwt);
         Document doc = documentRepository.findByIdAndUserId(documentId, user.getId())
-            .orElseThrow(() -> new RuntimeException("Documento não encontrado"));
+            .orElseThrow(() -> new DocumentNotFoundException("Documento não encontrado: " + documentId));
         return toResponseDTO(doc);
     }
 
     private String generateTitle(String description) {
-        // Gera um título curto a partir das primeiras palavras da descrição
         String trimmed = description.trim();
         if (trimmed.length() <= 50) return trimmed;
         return trimmed.substring(0, 50).trim() + "...";

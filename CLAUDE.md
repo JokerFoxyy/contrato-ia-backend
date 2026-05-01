@@ -28,7 +28,7 @@ CI (`.github/workflows/ci.yml`) runs on JDK 21 with a Postgres 16 service contai
 
 ## Java version gotcha
 
-`pom.xml` sets `<java.version>19</java.version>` but the README and CI both target **JDK 21**. Build with JDK 21; if you bump the property, keep all three in sync.
+`pom.xml` sets `<java.version>21</java.version>` matching CI. The local dev machine has JDK 19 — to run tests locally, override with `-Dmaven.compiler.release=19`. CI uses JDK 21 and compiles natively.
 
 ## Architecture
 
@@ -42,9 +42,9 @@ Spring Boot 3.2 monolith. Single Maven module, package root `br.com.contratoai`,
 2. Plan-gating: `documentRepository.countDocumentsSince(userId, firstOfMonth)` is checked against `FREE_PLAN_MONTHLY_LIMIT = 3` (hard-coded in `UserService`). PRO/BUSINESS skip the check.
 3. A `Document` row is persisted with `status = GENERATING` *before* calling the LLM.
 4. `ClaudeService.generateDocument(description)` calls Anthropic's `/v1/messages` synchronously (`.block()` on the WebClient) using the system prompt hard-coded inside `ClaudeService` (Brazilian-jurist persona).
-5. Status flips to `DRAFT` on success. Note: `DocumentStatus.FAILED` does **not** exist — failures bubble as `RuntimeException` and the row stays at `DRAFT` (this is a known behavioral quirk; see `DocumentService.generate`).
+5. Status flips to `DRAFT` on success, or `FAILED` on error. On failure, the document is saved with `FAILED` status before throwing `ClaudeApiException`.
 
-`DocumentStatus` lifecycle: `GENERATING → DRAFT → FINALIZED → SIGNING → SIGNED → ARCHIVED`.
+`DocumentStatus` lifecycle: `GENERATING → DRAFT/FAILED → FINALIZED → SIGNING → SIGNED → ARCHIVED`.
 
 ### Two separate API surfaces share the JWT
 
@@ -56,20 +56,26 @@ Spring Boot 3.2 monolith. Single Maven module, package root `br.com.contratoai`,
 ### Persistence
 
 - **Flyway owns the schema.** `spring.jpa.hibernate.ddl-auto=validate`, so JPA never alters the DB. New columns / tables go in `src/main/resources/db/migration/V{n}__*.sql` — never edit a previously released `V*` file.
-- Migrations so far: V1 users, V2 templates (+ seed data for 5 default contract templates), V3 documents, V4 signatures.
-- `users.documents_this_month` exists in the schema but is unused — the monthly count is computed on demand via `DocumentRepository.countDocumentsSince`.
+- Migrations so far: V1 users, V2 templates (+ seed data for 5 default contract templates), V3 documents, V4 signatures, V5 drops `documents_this_month` column.
+- The monthly document count is computed on demand via `DocumentRepository.countDocumentsSince`.
 - The `templates` table is seeded with system prompts that are intended to *augment* the persona prompt in `ClaudeService`. Today `DocumentService.generate` looks up the template but does **not** thread `template.systemPrompt` into the Claude call — the persona prompt is always used. If you wire templates up, that's the join point.
 
 ### External integrations
 
-- **Anthropic** (`ClaudeService` + `WebClientConfig`): direct REST via WebClient with `x-api-key` header and `anthropic-version: 2023-06-01`. Model and max-tokens come from `claude.api.*` config. The 10MB `maxInMemorySize` exists because generated contracts can be long.
+- **Anthropic** (`ClaudeService` + `WebClientConfig`): direct REST via WebClient with `x-api-key` header and `anthropic-version: 2023-06-01`. Model and max-tokens come from `claude.api.*` config. The 10MB `maxInMemorySize` exists because generated contracts can be long. WebClient configured with 10s connect timeout, 60s response timeout, and retry with backoff (2 retries, 2s interval) for 5xx errors.
 - **Stripe**, **Cloudflare R2 (via AWS S3 SDK)**: dependencies and config keys are wired (`stripe.*`, `r2.*` in `application.yml`) but **no service classes implement them yet** — `pdfUrl`/`docxUrl` columns and `Plan.PRO/BUSINESS` paths are placeholders waiting for those integrations.
 
 ### Error handling
 
+Typed exception hierarchy in `br.com.contratoai.exception`:
+
 `GlobalExceptionHandler` maps:
 - `MethodArgumentNotValidException` → 400 with field-keyed errors.
-- Any `RuntimeException` → 500, **except** when `ex.getMessage().contains("não encontrado")` (Portuguese for "not found"), which becomes 404. Throw `RuntimeException("... não encontrado")` for not-found cases until a proper exception hierarchy lands.
+- `DocumentNotFoundException` → 404
+- `UserNotFoundException` → 404
+- `PlanLimitExceededException` → 402 Payment Required
+- `ClaudeApiException` → 503 Service Unavailable
+- Any other `RuntimeException` → 500 with generic message.
 
 ## Local dev defaults
 

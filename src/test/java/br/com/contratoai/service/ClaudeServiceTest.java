@@ -1,5 +1,6 @@
 package br.com.contratoai.service;
 
+import br.com.contratoai.exception.ClaudeApiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,7 @@ class ClaudeServiceTest {
         when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
         when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
         when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.justOrEmpty(response));
     }
 
@@ -77,7 +79,7 @@ class ClaudeServiceTest {
         mockWebClientPost(null);
 
         assertThatThrownBy(() -> claudeService.generateDocument("descricao qualquer"))
-            .isInstanceOf(RuntimeException.class)
+            .isInstanceOf(ClaudeApiException.class)
             .hasMessage("Resposta vazia da Claude API");
     }
 
@@ -90,7 +92,7 @@ class ClaudeServiceTest {
         mockWebClientPost(response);
 
         assertThatThrownBy(() -> claudeService.generateDocument("descricao qualquer"))
-            .isInstanceOf(RuntimeException.class)
+            .isInstanceOf(ClaudeApiException.class)
             .hasMessage("Conteúdo vazio na resposta da Claude API");
     }
 
@@ -104,7 +106,7 @@ class ClaudeServiceTest {
         mockWebClientPost(response);
 
         assertThatThrownBy(() -> claudeService.generateDocument("descricao qualquer"))
-            .isInstanceOf(RuntimeException.class)
+            .isInstanceOf(ClaudeApiException.class)
             .hasMessage("Conteúdo vazio na resposta da Claude API");
     }
 }

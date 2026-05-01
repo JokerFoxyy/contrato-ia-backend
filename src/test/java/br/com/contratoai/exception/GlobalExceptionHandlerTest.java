@@ -13,6 +13,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class GlobalExceptionHandlerTest {
 
@@ -73,53 +74,74 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("handleRuntime - should return 404 for 'nao encontrado' messages")
-    void handleRuntime_notFound() {
-        RuntimeException ex = new RuntimeException("Documento não encontrado");
+    @DisplayName("handleDocumentNotFound - should return 404")
+    void handleDocumentNotFound() {
+        DocumentNotFoundException ex = new DocumentNotFoundException("Documento não encontrado: some-id");
 
-        ResponseEntity<Map<String, Object>> response = handler.handleRuntime(ex);
+        ResponseEntity<Map<String, Object>> response = handler.handleDocumentNotFound(ex);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().get("status")).isEqualTo(404);
-        assertThat(response.getBody().get("error")).isEqualTo("Documento não encontrado");
+        assertThat(response.getBody().get("error")).isEqualTo("Documento não encontrado: some-id");
     }
 
     @Test
-    @DisplayName("handleRuntime - should return 404 for user not found")
-    void handleRuntime_userNotFound() {
-        RuntimeException ex = new RuntimeException("Usuário não encontrado: some-id");
+    @DisplayName("handleUserNotFound - should return 404")
+    void handleUserNotFound() {
+        UserNotFoundException ex = new UserNotFoundException("Usuário não encontrado: some-id");
 
-        ResponseEntity<Map<String, Object>> response = handler.handleRuntime(ex);
+        ResponseEntity<Map<String, Object>> response = handler.handleUserNotFound(ex);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().get("status")).isEqualTo(404);
+        assertThat(response.getBody().get("error")).isEqualTo("Usuário não encontrado: some-id");
+    }
+
+    @Test
+    @DisplayName("handlePlanLimit - should return 402 Payment Required")
+    void handlePlanLimit() {
+        PlanLimitExceededException ex = new PlanLimitExceededException(
+            "Limite de 3 documentos/mês do plano gratuito atingido. Faça upgrade para o plano Pro."
+        );
+
+        ResponseEntity<Map<String, Object>> response = handler.handlePlanLimit(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.PAYMENT_REQUIRED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("status")).isEqualTo(402);
+        assertThat(response.getBody().get("error")).isEqualTo(
+            "Limite de 3 documentos/mês do plano gratuito atingido. Faça upgrade para o plano Pro."
+        );
+    }
+
+    @Test
+    @DisplayName("handleClaudeApi - should return 503 Service Unavailable")
+    void handleClaudeApi() {
+        ClaudeApiException ex = new ClaudeApiException("Claude API erro 4xx: rate limited");
+
+        ResponseEntity<Map<String, Object>> response = handler.handleClaudeApi(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("status")).isEqualTo(503);
+        assertThat(response.getBody().get("error")).isEqualTo(
+            "Serviço de geração temporariamente indisponível. Tente novamente."
+        );
     }
 
     @Test
     @DisplayName("handleRuntime - should return 500 for generic runtime errors")
     void handleRuntime_internalServerError() {
-        RuntimeException ex = new RuntimeException("Erro ao gerar documento com IA: API timeout");
+        RuntimeException ex = new RuntimeException("Algum erro inesperado");
 
         ResponseEntity<Map<String, Object>> response = handler.handleRuntime(ex);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().get("status")).isEqualTo(500);
-        assertThat(response.getBody().get("error")).isEqualTo("Erro ao gerar documento com IA: API timeout");
-    }
-
-    @Test
-    @DisplayName("handleRuntime - should return 500 for plan limit error")
-    void handleRuntime_planLimitError() {
-        RuntimeException ex = new RuntimeException(
-            "Limite de 3 documentos/mês do plano gratuito atingido. Faça upgrade para o plano Pro."
-        );
-
-        ResponseEntity<Map<String, Object>> response = handler.handleRuntime(ex);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        assertThat(response.getBody().get("status")).isEqualTo(500);
+        assertThat(response.getBody().get("error")).isEqualTo("Erro interno do servidor");
     }
 
     @Test

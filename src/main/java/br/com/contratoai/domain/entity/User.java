@@ -39,10 +39,6 @@ public class User {
     @Builder.Default
     private Plan plan = Plan.FREE;
 
-    @Column(name = "documents_this_month")
-    @Builder.Default
-    private int documentsThisMonth = 0;
-
     @Column(name = "stripe_customer_id")
     private String stripeCustomerId;
 
