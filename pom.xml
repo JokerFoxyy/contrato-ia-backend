@@ -105,7 +105,7 @@
             <version>${stripe.version}</version>
         </dependency>
 
-        <!-- ===== AWS SDK v2 (S3 + Presigner) ===== -->
+        <!-- ===== AWS SDK v2 (S3 + SQS) ===== -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
@@ -114,6 +114,11 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3-transfer-manager</artifactId>
+            <version>${awssdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sqs</artifactId>
             <version>${awssdk.version}</version>
         </dependency>
 

@@ -44,7 +44,20 @@ class DocumentControllerTest {
     @MockBean
     private DocumentService documentService;
 
-    private DocumentResponseDTO sampleResponse() {
+    private DocumentResponseDTO sampleGeneratingResponse() {
+        return new DocumentResponseDTO(
+            UUID.randomUUID(),
+            "Contrato de Servicos",
+            null, // Conteúdo ainda não gerado — está na fila
+            DocumentStatus.GENERATING,
+            null,
+            null,
+            LocalDateTime.of(2025, 6, 15, 10, 30),
+            LocalDateTime.of(2025, 6, 15, 10, 30)
+        );
+    }
+
+    private DocumentResponseDTO sampleDraftResponse() {
         return new DocumentResponseDTO(
             UUID.randomUUID(),
             "Contrato de Servicos",
@@ -58,9 +71,9 @@ class DocumentControllerTest {
     }
 
     @Test
-    @DisplayName("POST /v1/documents/generate - should return 200 with valid request")
+    @DisplayName("POST /v1/documents/generate - should return 202 Accepted with GENERATING status")
     void generate_validRequest() throws Exception {
-        DocumentResponseDTO response = sampleResponse();
+        DocumentResponseDTO response = sampleGeneratingResponse();
         when(documentService.generate(any(), any())).thenReturn(response);
 
         Map<String, Object> requestBody = Map.of(
@@ -70,10 +83,10 @@ class DocumentControllerTest {
         mockMvc.perform(post("/v1/documents/generate")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(requestBody)))
-            .andExpect(status().isOk())
+            .andExpect(status().isAccepted())
             .andExpect(jsonPath("$.title").value("Contrato de Servicos"))
-            .andExpect(jsonPath("$.generatedContent").value("CONTRATO DE PRESTACAO DE SERVICOS..."))
-            .andExpect(jsonPath("$.status").value("DRAFT"));
+            .andExpect(jsonPath("$.generatedContent").doesNotExist())
+            .andExpect(jsonPath("$.status").value("GENERATING"));
     }
 
     @Test
@@ -114,7 +127,7 @@ class DocumentControllerTest {
     @Test
     @DisplayName("POST /v1/documents/generate - should accept request with title and templateId")
     void generate_withOptionalFields() throws Exception {
-        DocumentResponseDTO response = sampleResponse();
+        DocumentResponseDTO response = sampleGeneratingResponse();
         when(documentService.generate(any(), any())).thenReturn(response);
 
         UUID templateId = UUID.randomUUID();
@@ -127,14 +140,14 @@ class DocumentControllerTest {
         mockMvc.perform(post("/v1/documents/generate")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(requestBody)))
-            .andExpect(status().isOk())
+            .andExpect(status().isAccepted())
             .andExpect(jsonPath("$.title").value("Contrato de Servicos"));
     }
 
     @Test
     @DisplayName("GET /v1/documents - should return paginated documents")
     void listDocuments_success() throws Exception {
-        DocumentResponseDTO response = sampleResponse();
+        DocumentResponseDTO response = sampleDraftResponse();
         PageImpl<DocumentResponseDTO> page = new PageImpl<>(
             List.of(response), PageRequest.of(0, 10), 1
         );
@@ -167,7 +180,7 @@ class DocumentControllerTest {
     @Test
     @DisplayName("GET /v1/documents/{id} - should return document by id")
     void getDocument_found() throws Exception {
-        DocumentResponseDTO response = sampleResponse();
+        DocumentResponseDTO response = sampleDraftResponse();
         when(documentService.getDocument(any(UUID.class), any())).thenReturn(response);
 
         mockMvc.perform(get("/v1/documents/{id}", UUID.randomUUID()))

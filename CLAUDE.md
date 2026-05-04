@@ -40,9 +40,13 @@ Spring Boot 3.2 monolith. Single Maven module, package root `br.com.contratoai`,
 
 1. `UserService.getOrCreateUser(jwt)` — **lazy provisioning**: on first request from a Keycloak user, a row is inserted into `users` keyed by `keycloak_id = jwt.getSubject()`. There is no separate signup endpoint; the JWT is the source of truth for identity.
 2. Plan-gating: `documentRepository.countDocumentsSince(userId, firstOfMonth)` is checked against `FREE_PLAN_MONTHLY_LIMIT = 3` (hard-coded in `UserService`). PRO/BUSINESS skip the check.
-3. A `Document` row is persisted with `status = GENERATING` *before* calling the LLM.
-4. `ClaudeService.generateDocument(description)` calls Anthropic's `/v1/messages` synchronously (`.block()` on the WebClient) using the system prompt hard-coded inside `ClaudeService` (Brazilian-jurist persona).
-5. Status flips to `DRAFT` on success, or `FAILED` on error. On failure, the document is saved with `FAILED` status before throwing `ClaudeApiException`.
+3. A `Document` row is persisted with `status = GENERATING`.
+4. A `DocumentGenerationMessage` is published to SQS FIFO queue via `DocumentQueuePublisher`. The endpoint returns **HTTP 202** immediately.
+5. `DocumentGenerationWorker` polls the SQS queue (`@Scheduled(fixedDelay=2000)`, long polling 5s, batch of 5, visibility timeout 120s):
+   - Calls `ClaudeService.generateDocument(description)` synchronously.
+   - On success: status → `DRAFT`, generates PDF/DOCX via Flying Saucer + POI, uploads to S3, deletes SQS message.
+   - On failure: status → `FAILED`, message stays in queue (SQS retries up to 3x, then DLQ).
+6. Frontend polls `GET /api/v1/documents/{id}/status` until status is no longer `GENERATING`.
 
 `DocumentStatus` lifecycle: `GENERATING → DRAFT/FAILED → FINALIZED → SIGNING → SIGNED → ARCHIVED`.
 
@@ -56,14 +60,16 @@ Spring Boot 3.2 monolith. Single Maven module, package root `br.com.contratoai`,
 ### Persistence
 
 - **Flyway owns the schema.** `spring.jpa.hibernate.ddl-auto=validate`, so JPA never alters the DB. New columns / tables go in `src/main/resources/db/migration/V{n}__*.sql` — never edit a previously released `V*` file.
-- Migrations so far: V1 users, V2 templates (+ seed data for 5 default contract templates), V3 documents, V4 signatures, V5 drops `documents_this_month` column.
+- Migrations so far: V1 users, V2 templates (+ seed data for 5 default contract templates), V3 documents, V4 signatures, V5 drops `documents_this_month` column, V6 adds `pdf_s3_key`/`docx_s3_key` to documents.
 - The monthly document count is computed on demand via `DocumentRepository.countDocumentsSince`.
 - The `templates` table is seeded with system prompts that are intended to *augment* the persona prompt in `ClaudeService`. Today `DocumentService.generate` looks up the template but does **not** thread `template.systemPrompt` into the Claude call — the persona prompt is always used. If you wire templates up, that's the join point.
 
 ### External integrations
 
 - **Anthropic** (`ClaudeService` + `WebClientConfig`): direct REST via WebClient with `x-api-key` header and `anthropic-version: 2023-06-01`. Model and max-tokens come from `claude.api.*` config. The 10MB `maxInMemorySize` exists because generated contracts can be long. WebClient configured with 10s connect timeout, 60s response timeout, and retry with backoff (2 retries, 2s interval) for 5xx errors.
-- **Stripe**, **Cloudflare R2 (via AWS S3 SDK)**: dependencies and config keys are wired (`stripe.*`, `r2.*` in `application.yml`) but **no service classes implement them yet** — `pdfUrl`/`docxUrl` columns and `Plan.PRO/BUSINESS` paths are placeholders waiting for those integrations.
+- **AWS S3** (`S3Config` + `S3StorageService`): dual-mode — LocalStack (dev, endpoint override + static creds) vs IAM role (prod, DefaultCredentialsProvider). Documents stored at `documents/{userId}/{documentId}/{timestamp}.{ext}` with SSE-S3 encryption. Soft delete via tagging for audit. Presigned URLs with configurable expiry.
+- **AWS SQS FIFO** (`SqsConfig` + `DocumentQueuePublisher` + `DocumentGenerationWorker`): async document generation. Main queue `contrato-ia-generation.fifo` with DLQ (maxReceiveCount=3). MessageGroupId = userId for ordered processing per user.
+- **Stripe**: config keys are wired (`stripe.*` in `application.yml`) but **no service classes implement them yet** — `Plan.PRO/BUSINESS` paths are placeholders.
 
 ### Error handling
 

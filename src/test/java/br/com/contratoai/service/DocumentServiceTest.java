@@ -5,9 +5,10 @@ import br.com.contratoai.domain.entity.Template;
 import br.com.contratoai.domain.entity.User;
 import br.com.contratoai.domain.enums.DocumentStatus;
 import br.com.contratoai.domain.enums.Plan;
+import br.com.contratoai.dto.DocumentGenerationMessage;
 import br.com.contratoai.dto.DocumentRequestDTO;
 import br.com.contratoai.dto.DocumentResponseDTO;
-import br.com.contratoai.exception.ClaudeApiException;
+import br.com.contratoai.dto.DocumentStatusDTO;
 import br.com.contratoai.exception.DocumentNotFoundException;
 import br.com.contratoai.exception.PlanLimitExceededException;
 import br.com.contratoai.repository.DocumentRepository;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -60,6 +62,9 @@ class DocumentServiceTest {
     @Mock
     private S3StorageService s3StorageService;
 
+    @Mock
+    private DocumentQueuePublisher documentQueuePublisher;
+
     @InjectMocks
     private DocumentService documentService;
 
@@ -87,7 +92,7 @@ class DocumentServiceTest {
     }
 
     @Test
-    @DisplayName("generate - happy path should create document and return DTO")
+    @DisplayName("generate - happy path should create GENERATING document and publish to SQS")
     void generate_happyPath() {
         DocumentRequestDTO request = new DocumentRequestDTO(
             "Preciso de um contrato de prestacao de servicos de TI",
@@ -98,7 +103,6 @@ class DocumentServiceTest {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
         when(documentRepository.countDocumentsSince(eq(user.getId()), any(LocalDateTime.class))).thenReturn(0L);
         when(userService.canCreateDocument(user, 0L)).thenReturn(true);
-        when(claudeService.generateDocument(request.description())).thenReturn("CONTRATO DE PRESTACAO DE SERVICOS...");
 
         UUID docId = UUID.randomUUID();
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
@@ -114,9 +118,23 @@ class DocumentServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.id()).isEqualTo(docId);
         assertThat(result.title()).isEqualTo("Contrato TI");
-        assertThat(result.generatedContent()).isEqualTo("CONTRATO DE PRESTACAO DE SERVICOS...");
-        assertThat(result.status()).isEqualTo(DocumentStatus.DRAFT);
-        verify(documentRepository, times(3)).save(any(Document.class)); // GENERATING, DRAFT, after S3 upload
+        assertThat(result.generatedContent()).isNull(); // Ainda não gerou — está na fila
+        assertThat(result.status()).isEqualTo(DocumentStatus.GENERATING);
+
+        // Verifica que salvou apenas 1x (status GENERATING)
+        verify(documentRepository, times(1)).save(any(Document.class));
+
+        // Verifica que publicou na fila SQS
+        ArgumentCaptor<DocumentGenerationMessage> captor = ArgumentCaptor.forClass(DocumentGenerationMessage.class);
+        verify(documentQueuePublisher).publishGenerationRequest(captor.capture());
+        DocumentGenerationMessage sentMessage = captor.getValue();
+        assertThat(sentMessage.documentId()).isEqualTo(docId);
+        assertThat(sentMessage.userId()).isEqualTo(user.getId());
+        assertThat(sentMessage.description()).isEqualTo(request.description());
+        assertThat(sentMessage.templateId()).isNull();
+
+        // Verifica que NÃO chamou Claude diretamente
+        verifyNoInteractions(claudeService);
     }
 
     @Test
@@ -131,12 +149,10 @@ class DocumentServiceTest {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
         when(documentRepository.countDocumentsSince(eq(user.getId()), any(LocalDateTime.class))).thenReturn(0L);
         when(userService.canCreateDocument(user, 0L)).thenReturn(true);
-        when(claudeService.generateDocument(request.description())).thenReturn("Contrato gerado");
 
-        UUID docId = UUID.randomUUID();
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
             Document doc = invocation.getArgument(0);
-            doc.setId(docId);
+            doc.setId(UUID.randomUUID());
             doc.setCreatedAt(LocalDateTime.now());
             doc.setUpdatedAt(LocalDateTime.now());
             return doc;
@@ -145,9 +161,10 @@ class DocumentServiceTest {
         DocumentResponseDTO result = documentService.generate(request, jwt);
 
         assertThat(result).isNotNull();
-        // Title should be truncated to 50 chars + "..."
         assertThat(result.title()).endsWith("...");
         assertThat(result.title().length()).isLessThanOrEqualTo(53);
+        assertThat(result.status()).isEqualTo(DocumentStatus.GENERATING);
+        verify(documentQueuePublisher).publishGenerationRequest(any(DocumentGenerationMessage.class));
     }
 
     @Test
@@ -162,7 +179,6 @@ class DocumentServiceTest {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
         when(documentRepository.countDocumentsSince(eq(user.getId()), any(LocalDateTime.class))).thenReturn(0L);
         when(userService.canCreateDocument(user, 0L)).thenReturn(true);
-        when(claudeService.generateDocument(request.description())).thenReturn("Contrato gerado");
 
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
             Document doc = invocation.getArgument(0);
@@ -175,6 +191,7 @@ class DocumentServiceTest {
         DocumentResponseDTO result = documentService.generate(request, jwt);
 
         assertThat(result.title()).isEqualTo("Contrato de aluguel residencial");
+        assertThat(result.status()).isEqualTo(DocumentStatus.GENERATING);
     }
 
     @Test
@@ -193,10 +210,14 @@ class DocumentServiceTest {
         assertThatThrownBy(() -> documentService.generate(request, jwt))
             .isInstanceOf(PlanLimitExceededException.class)
             .hasMessageContaining("Limite de 3 documentos/mês do plano gratuito atingido");
+
+        // Não deve publicar na fila nem chamar Claude
+        verifyNoInteractions(documentQueuePublisher);
+        verifyNoInteractions(claudeService);
     }
 
     @Test
-    @DisplayName("generate - with template should associate template to document")
+    @DisplayName("generate - with template should associate template and publish to SQS")
     void generate_withTemplate() {
         UUID templateId = UUID.randomUUID();
         DocumentRequestDTO request = new DocumentRequestDTO(
@@ -216,7 +237,6 @@ class DocumentServiceTest {
         when(documentRepository.countDocumentsSince(eq(user.getId()), any(LocalDateTime.class))).thenReturn(0L);
         when(userService.canCreateDocument(user, 0L)).thenReturn(true);
         when(templateRepository.findById(templateId)).thenReturn(Optional.of(template));
-        when(claudeService.generateDocument(request.description())).thenReturn("Contrato com template");
 
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
             Document doc = invocation.getArgument(0);
@@ -229,12 +249,18 @@ class DocumentServiceTest {
         DocumentResponseDTO result = documentService.generate(request, jwt);
 
         assertThat(result).isNotNull();
+        assertThat(result.status()).isEqualTo(DocumentStatus.GENERATING);
         verify(templateRepository).findById(templateId);
+
+        // Verifica que o templateId foi passado na mensagem SQS
+        ArgumentCaptor<DocumentGenerationMessage> captor = ArgumentCaptor.forClass(DocumentGenerationMessage.class);
+        verify(documentQueuePublisher).publishGenerationRequest(captor.capture());
+        assertThat(captor.getValue().templateId()).isEqualTo(templateId);
     }
 
     @Test
-    @DisplayName("generate - Claude API failure should throw with wrapped message")
-    void generate_claudeApiFailure() {
+    @DisplayName("generate - SQS publish failure should propagate exception")
+    void generate_sqsPublishFailure() {
         DocumentRequestDTO request = new DocumentRequestDTO(
             "Preciso de um contrato de prestacao de servicos",
             "Contrato",
@@ -244,7 +270,6 @@ class DocumentServiceTest {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
         when(documentRepository.countDocumentsSince(eq(user.getId()), any(LocalDateTime.class))).thenReturn(0L);
         when(userService.canCreateDocument(user, 0L)).thenReturn(true);
-        when(claudeService.generateDocument(anyString())).thenThrow(new ClaudeApiException("API timeout"));
 
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
             Document doc = invocation.getArgument(0);
@@ -252,14 +277,48 @@ class DocumentServiceTest {
             return doc;
         });
 
-        assertThatThrownBy(() -> documentService.generate(request, jwt))
-            .isInstanceOf(ClaudeApiException.class)
-            .hasMessageContaining("API timeout");
+        doThrow(new RuntimeException("Erro ao publicar na fila de geração: Connection refused"))
+            .when(documentQueuePublisher).publishGenerationRequest(any());
 
-        // Verifica que o documento foi salvo com status FAILED
-        verify(documentRepository, atLeast(2)).save(argThat(doc ->
-            doc.getStatus() == DocumentStatus.FAILED || doc.getStatus() == DocumentStatus.GENERATING
-        ));
+        assertThatThrownBy(() -> documentService.generate(request, jwt))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Erro ao publicar na fila");
+    }
+
+    // === getDocumentStatus tests ===
+
+    @Test
+    @DisplayName("getDocumentStatus - should return status DTO for existing document")
+    void getDocumentStatus_found() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .status(DocumentStatus.GENERATING)
+            .updatedAt(LocalDateTime.now())
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+
+        DocumentStatusDTO result = documentService.getDocumentStatus(docId, jwt);
+
+        assertThat(result.id()).isEqualTo(docId);
+        assertThat(result.status()).isEqualTo(DocumentStatus.GENERATING);
+    }
+
+    @Test
+    @DisplayName("getDocumentStatus - should throw when document not found")
+    void getDocumentStatus_notFound() {
+        UUID docId = UUID.randomUUID();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.getDocumentStatus(docId, jwt))
+            .isInstanceOf(DocumentNotFoundException.class);
     }
 
     @Test

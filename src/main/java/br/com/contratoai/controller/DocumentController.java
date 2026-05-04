@@ -2,6 +2,7 @@ package br.com.contratoai.controller;
 
 import br.com.contratoai.dto.DocumentRequestDTO;
 import br.com.contratoai.dto.DocumentResponseDTO;
+import br.com.contratoai.dto.DocumentStatusDTO;
 import br.com.contratoai.service.DocumentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +31,7 @@ public class DocumentController {
         @AuthenticationPrincipal Jwt jwt
     ) {
         DocumentResponseDTO response = documentService.generate(request, jwt);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.accepted().body(response); // 202 — geração acontece em background
     }
 
     @GetMapping
@@ -47,6 +48,14 @@ public class DocumentController {
         @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.ok(documentService.getDocument(id, jwt));
+    }
+
+    @GetMapping("/{id}/status")
+    public ResponseEntity<DocumentStatusDTO> getDocumentStatus(
+        @PathVariable UUID id,
+        @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok(documentService.getDocumentStatus(id, jwt));
     }
 
     @GetMapping("/{id}/pdf")

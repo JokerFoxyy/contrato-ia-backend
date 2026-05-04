@@ -4,9 +4,10 @@ import br.com.contratoai.domain.entity.Document;
 import br.com.contratoai.domain.entity.Template;
 import br.com.contratoai.domain.entity.User;
 import br.com.contratoai.domain.enums.DocumentStatus;
+import br.com.contratoai.dto.DocumentGenerationMessage;
 import br.com.contratoai.dto.DocumentRequestDTO;
 import br.com.contratoai.dto.DocumentResponseDTO;
-import br.com.contratoai.exception.ClaudeApiException;
+import br.com.contratoai.dto.DocumentStatusDTO;
 import br.com.contratoai.exception.DocumentNotFoundException;
 import br.com.contratoai.exception.PlanLimitExceededException;
 import br.com.contratoai.repository.DocumentRepository;
@@ -40,7 +41,13 @@ public class DocumentService {
     private final PdfGenerationService pdfGenerationService;
     private final DocxGenerationService docxGenerationService;
     private final S3StorageService s3StorageService;
+    private final DocumentQueuePublisher documentQueuePublisher;
 
+    /**
+     * Cria um documento em estado GENERATING e publica na fila SQS.
+     * O processamento real (Claude API + PDF/DOCX + S3) acontece no worker.
+     * Retorna imediatamente para o frontend fazer polling via GET /{id}/status.
+     */
     @Transactional
     public DocumentResponseDTO generate(DocumentRequestDTO request, Jwt jwt) {
         User user = userService.getOrCreateUser(jwt);
@@ -59,8 +66,10 @@ public class DocumentService {
 
         // Busca template se informado
         Template template = null;
+        UUID templateId = null;
         if (request.templateId() != null) {
             template = templateRepository.findById(request.templateId()).orElse(null);
+            templateId = request.templateId();
         }
 
         // Cria o documento em estado GENERATING
@@ -74,31 +83,13 @@ public class DocumentService {
 
         document = documentRepository.save(document);
 
-        // Chama a Claude API para gerar o conteúdo
-        try {
-            String generatedContent = claudeService.generateDocument(request.description());
-            document.setGeneratedContent(generatedContent);
-            document.setStatus(DocumentStatus.DRAFT);
-            document = documentRepository.save(document);
+        // Publica na fila SQS para processamento assíncrono
+        DocumentGenerationMessage message = DocumentGenerationMessage.of(
+            document.getId(), user.getId(), request.description(), templateId
+        );
+        documentQueuePublisher.publishGenerationRequest(message);
 
-            // Gera e faz upload do PDF e DOCX para S3
-            uploadDocumentFiles(document, user.getId());
-            document = documentRepository.save(document);
-
-        } catch (ClaudeApiException e) {
-            log.error("Falha ao gerar documento via IA. userId={}, documentId={}, erro={}",
-                user.getId(), document.getId(), e.getMessage(), e);
-            document.setStatus(DocumentStatus.FAILED);
-            documentRepository.save(document);
-            throw e;
-        } catch (Exception e) {
-            log.error("Falha ao gerar documento via IA. userId={}, documentId={}, erro={}",
-                user.getId(), document.getId(), e.getMessage(), e);
-            document.setStatus(DocumentStatus.FAILED);
-            documentRepository.save(document);
-            throw new ClaudeApiException("Erro ao gerar documento com IA: " + e.getMessage(), e);
-        }
-
+        log.info("Documento {} enfileirado para geração. userId={}", document.getId(), user.getId());
         return toResponseDTO(document);
     }
 
@@ -159,6 +150,17 @@ public class DocumentService {
             return s3StorageService.generatePresignedUrl(doc.getDocxS3Key()).toString();
         }
         return null;
+    }
+
+    /**
+     * Retorna o status atual do documento (endpoint leve para polling).
+     */
+    @Transactional(readOnly = true)
+    public DocumentStatusDTO getDocumentStatus(UUID documentId, Jwt jwt) {
+        User user = userService.getOrCreateUser(jwt);
+        Document doc = documentRepository.findByIdAndUserId(documentId, user.getId())
+            .orElseThrow(() -> new DocumentNotFoundException("Documento não encontrado: " + documentId));
+        return new DocumentStatusDTO(doc.getId(), doc.getStatus(), doc.getPdfUrl(), doc.getDocxUrl(), doc.getUpdatedAt());
     }
 
     /**

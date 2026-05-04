@@ -38,7 +38,7 @@ services:
     image: localstack/localstack:3.4
     container_name: contratoai-localstack
     environment:
-      SERVICES: s3
+      SERVICES: s3,sqs
       DEFAULT_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
     ports:

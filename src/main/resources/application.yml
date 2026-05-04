@@ -43,7 +43,7 @@ claude:
     model: claude-sonnet-4-6
     max-tokens: 4096
 
-# AWS S3
+# AWS
 aws:
   s3:
     region: ${AWS_REGION:us-east-1}
@@ -52,6 +52,10 @@ aws:
     access-key: ${AWS_ACCESS_KEY_ID:}
     secret-key: ${AWS_SECRET_ACCESS_KEY:}
     presigned-url-expiry-hours: ${AWS_S3_PRESIGNED_EXPIRY_HOURS:24}
+  sqs:
+    region: ${AWS_REGION:us-east-1}
+    endpoint: ${AWS_SQS_ENDPOINT:}
+    document-generation-queue-url: ${AWS_SQS_GENERATION_QUEUE_URL:}
 
 # Stripe
 stripe:

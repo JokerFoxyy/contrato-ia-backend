@@ -2,7 +2,7 @@ spring:
   jpa:
     show-sql: true
 
-# LocalStack S3 para desenvolvimento local
+# LocalStack para desenvolvimento local
 aws:
   s3:
     endpoint: http://localhost:4566
@@ -10,6 +10,9 @@ aws:
     secret-key: test
     bucket: contrato-ia-docs
     region: us-east-1
+  sqs:
+    endpoint: http://localhost:4566
+    document-generation-queue-url: http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/contrato-ia-generation.fifo
 
 logging:
   level:
