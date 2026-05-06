@@ -1,21 +1,26 @@
 package br.com.contratoai.service;
 
 import br.com.contratoai.domain.entity.User;
+import br.com.contratoai.domain.enums.AuditAction;
 import br.com.contratoai.domain.enums.Plan;
 import br.com.contratoai.exception.UserNotFoundException;
 import br.com.contratoai.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
     private final UserRepository userRepository;
+    private final AuditService auditService;
 
     // Limite de documentos por mês no plano gratuito
     private static final int FREE_PLAN_MONTHLY_LIMIT = 3;
@@ -53,6 +58,12 @@ public class UserService {
             .plan(Plan.FREE)
             .build();
 
-        return userRepository.save(newUser);
+        User saved = userRepository.save(newUser);
+
+        auditService.logUserAction(AuditAction.USER_CREATED, saved.getId(),
+            Map.of("email", saved.getEmail(), "plan", saved.getPlan().name()));
+        log.info("Novo usuário provisionado: id={}, email={}", saved.getId(), saved.getEmail());
+
+        return saved;
     }
 }

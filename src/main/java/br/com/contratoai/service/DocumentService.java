@@ -3,6 +3,7 @@ package br.com.contratoai.service;
 import br.com.contratoai.domain.entity.Document;
 import br.com.contratoai.domain.entity.Template;
 import br.com.contratoai.domain.entity.User;
+import br.com.contratoai.domain.enums.AuditAction;
 import br.com.contratoai.domain.enums.DocumentStatus;
 import br.com.contratoai.dto.DocumentGenerationMessage;
 import br.com.contratoai.dto.DocumentRequestDTO;
@@ -14,6 +15,7 @@ import br.com.contratoai.repository.DocumentRepository;
 import br.com.contratoai.repository.TemplateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -42,6 +44,7 @@ public class DocumentService {
     private final DocxGenerationService docxGenerationService;
     private final S3StorageService s3StorageService;
     private final DocumentQueuePublisher documentQueuePublisher;
+    private final AuditService auditService;
 
     /**
      * Cria um documento em estado GENERATING e publica na fila SQS.
@@ -59,6 +62,8 @@ public class DocumentService {
         );
 
         if (!userService.canCreateDocument(user, docsThisMonth)) {
+            auditService.logDocumentAction(AuditAction.PLAN_LIMIT_REACHED, user.getId(), null,
+                Map.of("plan", user.getPlan().name(), "docsThisMonth", docsThisMonth));
             throw new PlanLimitExceededException(
                 "Limite de 3 documentos/mês do plano gratuito atingido. Faça upgrade para o plano Pro."
             );
@@ -89,6 +94,10 @@ public class DocumentService {
         );
         documentQueuePublisher.publishGenerationRequest(message);
 
+        auditService.logDocumentAction(AuditAction.DOCUMENT_GENERATION_REQUESTED, user.getId(),
+            document.getId(), Map.of("title", document.getTitle(),
+                "hasTemplate", request.templateId() != null));
+
         log.info("Documento {} enfileirado para geração. userId={}", document.getId(), user.getId());
         return toResponseDTO(document);
     }
@@ -116,6 +125,8 @@ public class DocumentService {
     @Transactional(readOnly = true)
     public byte[] exportPdf(UUID documentId, Jwt jwt) {
         Document doc = getExportableDocument(documentId, jwt);
+        auditService.logDocumentAction(AuditAction.DOCUMENT_EXPORTED_PDF,
+            doc.getUser().getId(), documentId, Map.of("status", doc.getStatus().name()));
         return pdfGenerationService.generate(doc.getGeneratedContent(), doc.getTitle(), doc.getId());
     }
 
@@ -125,6 +136,8 @@ public class DocumentService {
     @Transactional(readOnly = true)
     public byte[] exportDocx(UUID documentId, Jwt jwt) {
         Document doc = getExportableDocument(documentId, jwt);
+        auditService.logDocumentAction(AuditAction.DOCUMENT_EXPORTED_DOCX,
+            doc.getUser().getId(), documentId, Map.of("status", doc.getStatus().name()));
         return docxGenerationService.generate(doc.getGeneratedContent(), doc.getTitle(), doc.getId());
     }
 

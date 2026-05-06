@@ -60,7 +60,7 @@ Spring Boot 3.2 monolith. Single Maven module, package root `br.com.contratoai`,
 ### Persistence
 
 - **Flyway owns the schema.** `spring.jpa.hibernate.ddl-auto=validate`, so JPA never alters the DB. New columns / tables go in `src/main/resources/db/migration/V{n}__*.sql` — never edit a previously released `V*` file.
-- Migrations so far: V1 users, V2 templates (+ seed data for 5 default contract templates), V3 documents, V4 signatures, V5 drops `documents_this_month` column, V6 adds `pdf_s3_key`/`docx_s3_key` to documents.
+- Migrations so far: V1 users, V2 templates (+ seed data for 5 default contract templates), V3 documents, V4 signatures, V5 drops `documents_this_month` column, V6 adds `pdf_s3_key`/`docx_s3_key` to documents, V7 creates `audit_logs` table (JSONB details, indexed by user/action/resource/date).
 - The monthly document count is computed on demand via `DocumentRepository.countDocumentsSince`.
 - The `templates` table is seeded with system prompts that are intended to *augment* the persona prompt in `ClaudeService`. Today `DocumentService.generate` looks up the template but does **not** thread `template.systemPrompt` into the Claude call — the persona prompt is always used. If you wire templates up, that's the join point.
 

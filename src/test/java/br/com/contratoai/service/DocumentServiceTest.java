@@ -65,6 +65,9 @@ class DocumentServiceTest {
     @Mock
     private DocumentQueuePublisher documentQueuePublisher;
 
+    @Mock
+    private AuditService auditService;
+
     @InjectMocks
     private DocumentService documentService;
 

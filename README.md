@@ -223,6 +223,22 @@ O `docker-compose.yml` sobe:
 - **templates** — Templates de contratos com system prompts para a IA
 - **documents** — Contratos gerados (input do usuário + output da IA + S3 keys)
 - **signatures** — Assinaturas digitais vinculadas aos documentos
+- **audit_logs** — Registro imutável de auditoria (ações, usuários, recursos, detalhes em JSONB)
+
+### Logging
+
+- **Profile `dev`**: formato legível com cores no console (inclui `requestId` e `userId` no MDC)
+- **Profile `prod`** (default): JSON estruturado via Logstash Encoder (pronto para CloudWatch/ELK)
+- Cada request HTTP recebe um `requestId` no header `X-Request-Id` para rastreabilidade
+- O worker SQS injeta `documentId`, `userId` e `correlationId` no MDC
+
+### Audit Log
+
+Todas as ações relevantes do sistema são registradas na tabela `audit_logs` com:
+- Ação (`DOCUMENT_GENERATION_REQUESTED`, `USER_CREATED`, `DOCUMENT_EXPORTED_PDF`, etc.)
+- ID do usuário, tipo e ID do recurso afetado
+- Detalhes em JSONB (flexível por ação)
+- IP do cliente e `requestId` para correlacionar com logs HTTP
 
 ### Ciclo de vida do documento
 

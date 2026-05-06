@@ -50,6 +50,9 @@ class DocumentGenerationWorkerTest {
     @Mock
     private S3StorageService s3StorageService;
 
+    @Mock
+    private AuditService auditService;
+
     private ObjectMapper objectMapper = new ObjectMapper();
 
     private DocumentGenerationWorker worker;
@@ -61,7 +64,7 @@ class DocumentGenerationWorkerTest {
         objectMapper.findAndRegisterModules();
         worker = new DocumentGenerationWorker(
             sqsClient, objectMapper, documentRepository, claudeService,
-            pdfGenerationService, docxGenerationService, s3StorageService
+            pdfGenerationService, docxGenerationService, s3StorageService, auditService
         );
         Field queueUrlField = DocumentGenerationWorker.class.getDeclaredField("queueUrl");
         queueUrlField.setAccessible(true);

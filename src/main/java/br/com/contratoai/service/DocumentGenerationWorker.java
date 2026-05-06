@@ -1,11 +1,13 @@
 package br.com.contratoai.service;
 
 import br.com.contratoai.domain.entity.Document;
+import br.com.contratoai.domain.enums.AuditAction;
 import br.com.contratoai.domain.enums.DocumentStatus;
 import br.com.contratoai.dto.DocumentGenerationMessage;
 import br.com.contratoai.repository.DocumentRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,7 @@ import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -28,6 +31,7 @@ public class DocumentGenerationWorker {
     private final PdfGenerationService pdfGenerationService;
     private final DocxGenerationService docxGenerationService;
     private final S3StorageService s3StorageService;
+    private final AuditService auditService;
 
     @Value("${aws.sqs.document-generation-queue-url}")
     private String queueUrl;
@@ -36,7 +40,8 @@ public class DocumentGenerationWorker {
                                      DocumentRepository documentRepository, ClaudeService claudeService,
                                      PdfGenerationService pdfGenerationService,
                                      DocxGenerationService docxGenerationService,
-                                     S3StorageService s3StorageService) {
+                                     S3StorageService s3StorageService,
+                                     AuditService auditService) {
         this.sqsClient = sqsClient;
         this.objectMapper = objectMapper;
         this.documentRepository = documentRepository;
@@ -44,6 +49,7 @@ public class DocumentGenerationWorker {
         this.pdfGenerationService = pdfGenerationService;
         this.docxGenerationService = docxGenerationService;
         this.s3StorageService = s3StorageService;
+        this.auditService = auditService;
     }
 
     /**
@@ -74,6 +80,12 @@ public class DocumentGenerationWorker {
         DocumentGenerationMessage genMessage = null;
         try {
             genMessage = objectMapper.readValue(message.body(), DocumentGenerationMessage.class);
+
+            // Injeta contexto no MDC para correlacionar logs do worker
+            MDC.put("documentId", genMessage.documentId().toString());
+            MDC.put("userId", genMessage.userId().toString());
+            MDC.put("correlationId", "worker-" + genMessage.documentId().toString().substring(0, 8));
+
             log.info("Processando geração assíncrona. documentId={}, userId={}",
                     genMessage.documentId(), genMessage.userId());
 
@@ -90,13 +102,20 @@ public class DocumentGenerationWorker {
                 return;
             }
 
+            auditService.logDocumentAction(AuditAction.DOCUMENT_GENERATION_STARTED,
+                genMessage.userId(), documentId, Map.of("description", genMessage.description()));
+
             // Gera conteúdo via Claude
             String generatedContent = claudeService.generateDocument(genMessage.description());
             document.setGeneratedContent(generatedContent);
             document.setStatus(DocumentStatus.DRAFT);
             documentRepository.save(document);
 
-            // Gera e faz upload do PDF
+            auditService.logDocumentAction(AuditAction.DOCUMENT_GENERATION_COMPLETED,
+                genMessage.userId(), documentId,
+                Map.of("contentLength", generatedContent.length()));
+
+            // Gera e faz upload do PDF/DOCX
             try {
                 byte[] pdfBytes = pdfGenerationService.generate(
                         generatedContent, document.getTitle(), document.getId());
@@ -114,6 +133,11 @@ public class DocumentGenerationWorker {
                 document.setDocxUrl(s3StorageService.generatePresignedUrl(docxKey).toString());
 
                 documentRepository.save(document);
+
+                auditService.logDocumentAction(AuditAction.DOCUMENT_UPLOADED_S3,
+                    genMessage.userId(), documentId,
+                    Map.of("pdfKey", pdfKey, "docxKey", docxKey));
+
                 log.info("Upload S3 concluído para documento {}", document.getId());
             } catch (Exception e) {
                 log.warn("Falha no upload S3 para documento {}. Documento em DRAFT disponível. Erro: {}",
@@ -131,10 +155,16 @@ public class DocumentGenerationWorker {
             // Marca documento como FAILED se possível
             if (genMessage != null) {
                 try {
-                    documentRepository.findById(genMessage.documentId()).ifPresent(doc -> {
+                    final UUID failedDocId = genMessage.documentId();
+                    final UUID failedUserId = genMessage.userId();
+                    documentRepository.findById(failedDocId).ifPresent(doc -> {
                         if (doc.getStatus() == DocumentStatus.GENERATING) {
                             doc.setStatus(DocumentStatus.FAILED);
                             documentRepository.save(doc);
+
+                            auditService.logDocumentAction(AuditAction.DOCUMENT_GENERATION_FAILED,
+                                failedUserId, failedDocId,
+                                Map.of("error", e.getMessage() != null ? e.getMessage() : "unknown"));
                         }
                     });
                 } catch (Exception inner) {
@@ -142,6 +172,8 @@ public class DocumentGenerationWorker {
                 }
             }
             // Não deleta a mensagem — SQS vai tentar de novo (até ir para DLQ)
+        } finally {
+            MDC.clear();
         }
     }
 
