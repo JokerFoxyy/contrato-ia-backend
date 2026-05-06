@@ -122,6 +122,13 @@
             <version>${awssdk.version}</version>
         </dependency>
 
+        <!-- ===== Resilience4j (Rate Limiting) ===== -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-ratelimiter</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+
         <!-- ===== Logging JSON (Logstash Encoder) ===== -->
         <dependency>
             <groupId>net.logstash.logback</groupId>

@@ -65,6 +65,12 @@ stripe:
     pro: ${STRIPE_PRICE_PRO:}
     business: ${STRIPE_PRICE_BUSINESS:}
 
+# Rate Limiting (requests por minuto por usuário)
+rate-limit:
+  generate: ${RATE_LIMIT_GENERATE:5}
+  export: ${RATE_LIMIT_EXPORT:20}
+  read: ${RATE_LIMIT_READ:60}
+
 # CORS
 cors:
   allowed-origins: ${CORS_ORIGINS:http://localhost:4200}

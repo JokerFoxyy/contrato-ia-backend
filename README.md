@@ -205,6 +205,9 @@ Todos os endpoints requerem autenticação via Bearer token (Keycloak JWT).
 | `AWS_SECRET_ACCESS_KEY`         | — (LocalStack: `test`)                         | Secret key AWS / LocalStack        |
 | `STRIPE_SECRET_KEY`             | —                                              | Chave secreta do Stripe            |
 | `STRIPE_WEBHOOK_SECRET`         | —                                              | Secret do webhook Stripe           |
+| `RATE_LIMIT_GENERATE`           | `5`                                            | Requests/min por user (generate)   |
+| `RATE_LIMIT_EXPORT`             | `20`                                           | Requests/min por user (PDF/DOCX)   |
+| `RATE_LIMIT_READ`               | `60`                                           | Requests/min por user (leitura)    |
 | `CORS_ORIGINS`                  | `http://localhost:4200`                        | Origens permitidas para CORS       |
 
 ## Docker Compose (dev)
@@ -224,6 +227,19 @@ O `docker-compose.yml` sobe:
 - **documents** — Contratos gerados (input do usuário + output da IA + S3 keys)
 - **signatures** — Assinaturas digitais vinculadas aos documentos
 - **audit_logs** — Registro imutável de auditoria (ações, usuários, recursos, detalhes em JSONB)
+
+### Rate Limiting
+
+Rate limiting per-user baseado no JWT, com 3 tiers:
+
+| Tier | Limite | Endpoints | Protege contra |
+|------|--------|-----------|----------------|
+| GENERATE | 5/min | `POST /generate` | Abuso da Claude API ($$) |
+| EXPORT | 20/min | `GET /{id}/pdf`, `GET /{id}/docx` | Download abusivo (CPU) |
+| READ | 60/min | Todos os outros | Scraping, polling excessivo |
+
+Retorna `429 Too Many Requests` com header `Retry-After: 60` quando excedido.
+Limites configuráveis via variáveis de ambiente: `RATE_LIMIT_GENERATE`, `RATE_LIMIT_EXPORT`, `RATE_LIMIT_READ`.
 
 ### Logging
 
