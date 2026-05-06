@@ -1,5 +1,6 @@
 package br.com.contratoai.service;
 
+import br.com.contratoai.config.InputSanitizer;
 import br.com.contratoai.domain.entity.Document;
 import br.com.contratoai.domain.entity.Template;
 import br.com.contratoai.domain.entity.User;
@@ -45,6 +46,8 @@ public class DocumentService {
     private final S3StorageService s3StorageService;
     private final DocumentQueuePublisher documentQueuePublisher;
     private final AuditService auditService;
+    private final InputSanitizer inputSanitizer;
+    private final ContentIntegrityService contentIntegrityService;
 
     /**
      * Cria um documento em estado GENERATING e publica na fila SQS.
@@ -53,6 +56,10 @@ public class DocumentService {
      */
     @Transactional
     public DocumentResponseDTO generate(DocumentRequestDTO request, Jwt jwt) {
+        // Sanitiza e valida input contra prompt injection
+        String sanitizedDescription = inputSanitizer.validateAndSanitize(request.description());
+        String sanitizedTitle = request.title() != null ? inputSanitizer.sanitize(request.title()) : null;
+
         User user = userService.getOrCreateUser(jwt);
 
         // Verifica limite do plano gratuito
@@ -77,20 +84,20 @@ public class DocumentService {
             templateId = request.templateId();
         }
 
-        // Cria o documento em estado GENERATING
+        // Cria o documento em estado GENERATING (usa input sanitizado)
         Document document = Document.builder()
             .user(user)
             .template(template)
-            .title(request.title() != null ? request.title() : generateTitle(request.description()))
-            .userDescription(request.description())
+            .title(sanitizedTitle != null ? sanitizedTitle : generateTitle(sanitizedDescription))
+            .userDescription(sanitizedDescription)
             .status(DocumentStatus.GENERATING)
             .build();
 
         document = documentRepository.save(document);
 
-        // Publica na fila SQS para processamento assíncrono
+        // Publica na fila SQS para processamento assíncrono (usa input sanitizado)
         DocumentGenerationMessage message = DocumentGenerationMessage.of(
-            document.getId(), user.getId(), request.description(), templateId
+            document.getId(), user.getId(), sanitizedDescription, templateId
         );
         documentQueuePublisher.publishGenerationRequest(message);
 
@@ -221,6 +228,18 @@ public class DocumentService {
 
         if (doc.getGeneratedContent() == null || doc.getGeneratedContent().isBlank()) {
             throw new IllegalStateException("Documento sem conteúdo gerado para exportação.");
+        }
+
+        // Verifica integridade do conteúdo (se hash existir)
+        if (doc.getContentHash() != null) {
+            if (!contentIntegrityService.verifyIntegrity(doc.getGeneratedContent(), doc.getContentHash())) {
+                log.error("Falha na verificação de integridade do documento {}!", documentId);
+                auditService.logDocumentAction(AuditAction.DOCUMENT_EXPORTED_PDF,
+                    user.getId(), documentId,
+                    Map.of("integrityCheckFailed", true, "action", "export_blocked"));
+                throw new IllegalStateException(
+                    "Falha na verificação de integridade do documento. O conteúdo pode ter sido alterado.");
+            }
         }
 
         return doc;

@@ -1,5 +1,6 @@
 package br.com.contratoai.exception;
 
+import br.com.contratoai.config.InputSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handlePlanLimit(PlanLimitExceededException ex) {
         log.info("Limite de plano atingido: {}", ex.getMessage());
         return buildResponse(HttpStatus.PAYMENT_REQUIRED, ex.getMessage());
+    }
+
+    @ExceptionHandler(InputSanitizer.PromptInjectionException.class)
+    public ResponseEntity<Map<String, Object>> handlePromptInjection(InputSanitizer.PromptInjectionException ex) {
+        log.warn("Tentativa de prompt injection detectada: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     @ExceptionHandler(ClaudeApiException.class)

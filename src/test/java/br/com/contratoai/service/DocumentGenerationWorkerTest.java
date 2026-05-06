@@ -53,6 +53,9 @@ class DocumentGenerationWorkerTest {
     @Mock
     private AuditService auditService;
 
+    @Mock
+    private ContentIntegrityService contentIntegrityService;
+
     private ObjectMapper objectMapper = new ObjectMapper();
 
     private DocumentGenerationWorker worker;
@@ -64,7 +67,8 @@ class DocumentGenerationWorkerTest {
         objectMapper.findAndRegisterModules();
         worker = new DocumentGenerationWorker(
             sqsClient, objectMapper, documentRepository, claudeService,
-            pdfGenerationService, docxGenerationService, s3StorageService, auditService
+            pdfGenerationService, docxGenerationService, s3StorageService,
+            auditService, contentIntegrityService
         );
         Field queueUrlField = DocumentGenerationWorker.class.getDeclaredField("queueUrl");
         queueUrlField.setAccessible(true);
@@ -102,6 +106,9 @@ class DocumentGenerationWorkerTest {
 
         // Mock Claude
         when(claudeService.generateDocument("Contrato de servicos")).thenReturn("CONTRATO GERADO...");
+
+        // Mock content hash
+        when(contentIntegrityService.generateHash("CONTRATO GERADO...")).thenReturn("abc123hash");
 
         // Mock S3 uploads
         when(s3StorageService.uploadDocument(eq(userId), eq(docId), any(), eq("application/pdf"), eq("pdf")))
@@ -218,6 +225,7 @@ class DocumentGenerationWorkerTest {
         when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class))).thenReturn(receiveResponse);
         when(documentRepository.findById(docId)).thenReturn(Optional.of(document));
         when(claudeService.generateDocument(anyString())).thenReturn("CONTRATO GERADO");
+        when(contentIntegrityService.generateHash(anyString())).thenReturn("hash123");
         when(pdfGenerationService.generate(anyString(), anyString(), any(UUID.class)))
             .thenThrow(new RuntimeException("S3 upload failed"));
 
@@ -228,6 +236,29 @@ class DocumentGenerationWorkerTest {
 
         // Mensagem deve ser deletada (geração teve sucesso, só o upload falhou)
         verify(sqsClient).deleteMessage(any(DeleteMessageRequest.class));
+    }
+
+    @Test
+    @DisplayName("pollQueue - invalid SQS message should be deleted and skipped")
+    void pollQueue_invalidMessage() throws Exception {
+        // Mensagem com campos obrigatórios nulos
+        String invalidBody = "{\"documentId\":null,\"userId\":null,\"description\":null,\"templateId\":null,\"timestamp\":null}";
+        Message invalidMessage = Message.builder()
+            .body(invalidBody)
+            .receiptHandle("receipt-invalid")
+            .build();
+
+        ReceiveMessageResponse receiveResponse = ReceiveMessageResponse.builder()
+            .messages(invalidMessage)
+            .build();
+        when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class))).thenReturn(receiveResponse);
+
+        worker.pollQueue();
+
+        // Deve deletar a mensagem malformada
+        verify(sqsClient).deleteMessage(any(DeleteMessageRequest.class));
+        // Não deve tentar gerar conteúdo
+        verifyNoInteractions(claudeService);
     }
 
     @Test

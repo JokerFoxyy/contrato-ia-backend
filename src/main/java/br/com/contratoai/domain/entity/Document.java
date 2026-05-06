@@ -48,6 +48,10 @@ public class Document {
     @Builder.Default
     private DocumentStatus status = DocumentStatus.GENERATING;
 
+    // SHA-256 hash do conteúdo gerado — integridade do contrato
+    @Column(name = "content_hash", length = 64)
+    private String contentHash;
+
     // Chave S3 do arquivo PDF (permanente — URL é gerada sob demanda via presigned URL)
     @Column(name = "pdf_s3_key")
     private String pdfS3Key;

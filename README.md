@@ -161,18 +161,21 @@ Frontend faz polling ← GET /{id}/status      DocumentGenerationWorker
 
 ```
 src/main/java/br/com/contratoai/
-├── config/          # SecurityConfig, WebClientConfig, S3Config, SqsConfig
+├── config/          # SecurityConfig, WebClientConfig, S3Config, SqsConfig,
+│                    # RateLimitConfig, RateLimitFilter, RequestLoggingFilter,
+│                    # InputSanitizer
 ├── controller/      # REST controllers
 ├── domain/
-│   ├── entity/      # User, Document, Template, Signature
-│   └── enums/       # Plan, DocumentStatus, SignatureStatus
+│   ├── entity/      # User, Document, Template, Signature, AuditLog
+│   └── enums/       # Plan, DocumentStatus, SignatureStatus, AuditAction
 ├── dto/             # Request/Response DTOs + DocumentGenerationMessage
 ├── exception/       # Typed exceptions + GlobalExceptionHandler
 ├── repository/      # Spring Data JPA repositories
 └── service/         # ClaudeService, DocumentService, UserService,
                      # DocumentQueuePublisher, DocumentGenerationWorker,
                      # PdfGenerationService, DocxGenerationService,
-                     # S3StorageService
+                     # S3StorageService, AuditService,
+                     # ContentIntegrityService
 ```
 
 ## Endpoints
@@ -255,6 +258,43 @@ Todas as ações relevantes do sistema são registradas na tabela `audit_logs` c
 - ID do usuário, tipo e ID do recurso afetado
 - Detalhes em JSONB (flexível por ação)
 - IP do cliente e `requestId` para correlacionar com logs HTTP
+
+### Security Hardening
+
+#### Prompt Injection Defense
+- **InputSanitizer**: valida e sanitiza inputs do usuário antes de enviar ao Claude API
+  - Detecta padrões de prompt injection (role override, system prompt exfiltration, code execution)
+  - Remove caracteres de controle, script tags e event handlers
+  - Lança `PromptInjectionException` (HTTP 400) quando detecta tentativa de injeção
+- **System prompt reforçado**: instruções de segurança no system prompt do Claude (ignora tentativas de override)
+
+#### Security Headers (via Spring Security)
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-XSS-Protection: 0` (desabilitado em favor de CSP — best practice moderna)
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(self)`
+
+#### CORS Hardening
+- Headers permitidos restritos: `Authorization`, `Content-Type`, `Accept`, `Origin`, `X-Requested-With`, `X-Request-Id`
+- Headers expostos: `X-Request-Id`, `X-Content-Type-Options`, `Retry-After`
+- Preflight cache: 1 hora (`maxAge=3600`)
+- Credenciais habilitadas apenas para origens configuradas
+
+#### Contract Integrity (SHA-256)
+- Hash SHA-256 gerado e salvo quando o conteúdo é criado pelo Claude
+- Verificação de integridade no export de PDF/DOCX
+- Bloqueia export se o conteúdo foi adulterado após a geração
+
+#### SQS Message Validation
+- Validação de campos obrigatórios nas mensagens SQS antes do processamento
+- Mensagens malformadas são deletadas da fila e logadas
+
+#### Error Response Sanitization
+- Stack traces nunca vazam nas respostas
+- Erros da Claude API retornam mensagem genérica (HTTP 503)
+- Erros internos retornam "Erro interno do servidor" (HTTP 500)
 
 ### Ciclo de vida do documento
 

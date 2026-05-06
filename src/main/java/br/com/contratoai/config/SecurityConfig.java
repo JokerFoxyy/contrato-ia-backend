@@ -11,6 +11,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -41,6 +43,22 @@ public class SecurityConfig {
             )
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+            )
+            // Security Headers
+            .headers(headers -> headers
+                .contentTypeOptions(contentType -> {})
+                .frameOptions(frame -> frame.deny())
+                .xssProtection(xss -> xss.headerValue(XXssProtectionHeaderWriter.HeaderValue.DISABLED))
+                .httpStrictTransportSecurity(hsts -> hsts
+                    .includeSubDomains(true)
+                    .maxAgeInSeconds(31536000)
+                )
+                .referrerPolicy(referrer -> referrer
+                    .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)
+                )
+                .permissionsPolicy(permissions -> permissions
+                    .policy("camera=(), microphone=(), geolocation=(), payment=(self)")
+                )
             );
 
         return http.build();
@@ -63,8 +81,16 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of(allowedOrigins.split(",")));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
+        // Headers restritos — apenas o necessário para a aplicação
+        config.setAllowedHeaders(List.of(
+            "Authorization", "Content-Type", "Accept", "Origin",
+            "X-Requested-With", "X-Request-Id"
+        ));
+        config.setExposedHeaders(List.of(
+            "X-Request-Id", "X-Content-Type-Options", "Retry-After"
+        ));
         config.setAllowCredentials(true);
+        config.setMaxAge(3600L); // Cache preflight por 1 hora
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

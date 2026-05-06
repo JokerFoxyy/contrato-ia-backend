@@ -32,6 +32,7 @@ public class DocumentGenerationWorker {
     private final DocxGenerationService docxGenerationService;
     private final S3StorageService s3StorageService;
     private final AuditService auditService;
+    private final ContentIntegrityService contentIntegrityService;
 
     @Value("${aws.sqs.document-generation-queue-url}")
     private String queueUrl;
@@ -41,7 +42,8 @@ public class DocumentGenerationWorker {
                                      PdfGenerationService pdfGenerationService,
                                      DocxGenerationService docxGenerationService,
                                      S3StorageService s3StorageService,
-                                     AuditService auditService) {
+                                     AuditService auditService,
+                                     ContentIntegrityService contentIntegrityService) {
         this.sqsClient = sqsClient;
         this.objectMapper = objectMapper;
         this.documentRepository = documentRepository;
@@ -50,6 +52,7 @@ public class DocumentGenerationWorker {
         this.docxGenerationService = docxGenerationService;
         this.s3StorageService = s3StorageService;
         this.auditService = auditService;
+        this.contentIntegrityService = contentIntegrityService;
     }
 
     /**
@@ -81,6 +84,14 @@ public class DocumentGenerationWorker {
         try {
             genMessage = objectMapper.readValue(message.body(), DocumentGenerationMessage.class);
 
+            // Valida campos obrigatórios da mensagem SQS
+            if (genMessage.documentId() == null || genMessage.userId() == null
+                    || genMessage.description() == null || genMessage.description().isBlank()) {
+                log.error("Mensagem SQS inválida: campos obrigatórios ausentes. body={}", message.body());
+                deleteMessage(message); // Remove mensagem malformada
+                return;
+            }
+
             // Injeta contexto no MDC para correlacionar logs do worker
             MDC.put("documentId", genMessage.documentId().toString());
             MDC.put("userId", genMessage.userId().toString());
@@ -108,6 +119,7 @@ public class DocumentGenerationWorker {
             // Gera conteúdo via Claude
             String generatedContent = claudeService.generateDocument(genMessage.description());
             document.setGeneratedContent(generatedContent);
+            document.setContentHash(contentIntegrityService.generateHash(generatedContent));
             document.setStatus(DocumentStatus.DRAFT);
             documentRepository.save(document);
 
