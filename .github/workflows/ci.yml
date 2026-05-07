@@ -4,11 +4,16 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -36,7 +41,7 @@ jobs:
           cache: maven
 
       - name: Build and Test
-        run: mvn clean verify
+        run: mvn clean verify -B
         env:
           DB_URL: jdbc:postgresql://localhost:5432/contratoiadb_test
           DB_USERNAME: contrato_user
@@ -44,6 +49,29 @@ jobs:
           KEYCLOAK_ISSUER_URI: http://localhost:8180/realms/contrato-ia
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
 
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: target/surefire-reports/
+          retention-days: 7
+
+  docker:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
       - name: Build Docker Image
-        if: github.ref == 'refs/heads/main'
-        run: mvn spring-boot:build-image -DskipTests
+        run: mvn spring-boot:build-image -DskipTests -B
