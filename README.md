@@ -321,6 +321,50 @@ Todas as ações relevantes do sistema são registradas na tabela `audit_logs` c
 
 `GENERATING → DRAFT/FAILED → FINALIZED → SIGNING → SIGNED → ARCHIVED`
 
+## CI/CD
+
+### Pipelines (GitHub Actions)
+
+| Workflow | Trigger | Ação |
+|----------|---------|------|
+| `ci.yml` | push/PR em `main` e `develop` | Build, testes, push Docker para GHCR (main) |
+| `auto-pr.yml` | push em `develop` | Cria PR develop → main |
+| `feature-pr.yml` | push em `feature/**` | Cria PR feature → develop |
+| `deploy.yml` | manual (`workflow_dispatch`) | Deploy para staging ou production (AWS ECS) |
+
+### Docker
+
+Multi-stage Dockerfile com:
+- **Build stage**: Maven 3.9 + JDK 21 (Alpine)
+- **Runtime stage**: JRE 21 Alpine, non-root user, container-aware JVM tuning
+- Imagem publicada no GHCR a cada push em `main`
+
+```bash
+# Build local
+docker build -t contrato-ia-backend .
+
+# Rodar local (requer env vars)
+docker run -p 8080:8080 \
+  -e DB_URL=jdbc:postgresql://host.docker.internal:5432/contratoiadb \
+  -e DB_USERNAME=contrato_user \
+  -e DB_PASSWORD=contrato_pass \
+  -e KEYCLOAK_ISSUER_URI=http://host.docker.internal:8180/realms/contrato-ia \
+  -e CLAUDE_API_KEY=sk-ant-sua-chave \
+  contrato-ia-backend
+```
+
+### Deploy para produção
+
+1. Push para `main` → CI builda e pusha a imagem Docker para GHCR
+2. Vá em **Actions → Deploy - Backend → Run workflow**
+3. Selecione `staging` ou `production` e a tag da imagem
+4. O workflow puxa do GHCR, pusha para ECR, e atualiza o ECS service
+
+### Branch Protection
+
+- `main` e `develop` protegidas — merge apenas via PR com aprovação
+- Fluxo: `feature/*` → PR → `develop` → PR → `main` → deploy
+
 ## Planos
 
 | Plano      | Docs/mês | PDF/DOCX | Assinatura digital | Multi-usuário | API |

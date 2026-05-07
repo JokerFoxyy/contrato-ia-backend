@@ -1,0 +1,97 @@
+name: Deploy - Backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: 'Docker image tag (default: latest)'
+        required: false
+        default: 'latest'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: sa-east-1
+  ECR_REPOSITORY: contrato-ia-backend
+  ECS_CLUSTER: contrato-ia
+  ECS_SERVICE_STAGING: contrato-ia-backend-staging
+  ECS_SERVICE_PRODUCTION: contrato-ia-backend-production
+  TASK_DEFINITION_STAGING: .aws/task-definition-staging.json
+  TASK_DEFINITION_PRODUCTION: .aws/task-definition-production.json
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Pull from GHCR and push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          GHCR_IMAGE=ghcr.io/${{ github.repository }}:${IMAGE_TAG}
+          ECR_IMAGE=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+
+          docker pull $GHCR_IMAGE
+          docker tag $GHCR_IMAGE $ECR_IMAGE
+          docker push $ECR_IMAGE
+
+          echo "ecr_image=$ECR_IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Select task definition
+        id: task-def-file
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            echo "file=${{ env.TASK_DEFINITION_PRODUCTION }}" >> $GITHUB_OUTPUT
+            echo "service=${{ env.ECS_SERVICE_PRODUCTION }}" >> $GITHUB_OUTPUT
+          else
+            echo "file=${{ env.TASK_DEFINITION_STAGING }}" >> $GITHUB_OUTPUT
+            echo "service=${{ env.ECS_SERVICE_STAGING }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def-file.outputs.file }}
+          container-name: contrato-ia-backend
+          image: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ steps.task-def-file.outputs.service }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Summary
+        run: |
+          echo "## Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** ${{ inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster:** ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** ${{ steps.task-def-file.outputs.service }}" >> $GITHUB_STEP_SUMMARY
