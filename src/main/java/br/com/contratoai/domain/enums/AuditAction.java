@@ -30,5 +30,11 @@ public enum AuditAction {
     PLAN_LIMIT_REACHED,
 
     // Autenticação
-    AUTH_ACCESS_DENIED
+    AUTH_ACCESS_DENIED,
+
+    // LGPD — Direitos do titular
+    USER_DATA_EXPORT_REQUESTED,
+    USER_DELETION_REQUESTED,
+    USER_DATA_ANONYMIZED,
+    USER_CONSENT_RECORDED
 }

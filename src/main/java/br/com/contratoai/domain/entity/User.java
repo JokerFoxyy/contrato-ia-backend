@@ -45,6 +45,20 @@ public class User {
     @Column(name = "stripe_subscription_id")
     private String stripeSubscriptionId;
 
+    // LGPD — Consentimento
+    @Column(name = "privacy_consent_at")
+    private LocalDateTime privacyConsentAt;
+
+    @Column(name = "terms_accepted_at")
+    private LocalDateTime termsAcceptedAt;
+
+    // LGPD — Direito ao apagamento
+    @Column(name = "deletion_requested_at")
+    private LocalDateTime deletionRequestedAt;
+
+    @Column(name = "data_deleted_at")
+    private LocalDateTime dataDeletedAt;
+
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @Builder.Default
     private List<Document> documents = new ArrayList<>();
@@ -56,4 +70,9 @@ public class User {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    /** Verifica se a conta foi marcada como excluída (dados anonimizados) */
+    public boolean isDeleted() {
+        return dataDeletedAt != null;
+    }
 }

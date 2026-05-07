@@ -188,8 +188,29 @@ src/main/java/br/com/contratoai/
 | GET    | `/api/v1/documents/{id}/status`   | 200    | Status da geração (polling)            |
 | GET    | `/api/v1/documents/{id}/pdf`      | 200    | Download do PDF                        |
 | GET    | `/api/v1/documents/{id}/docx`     | 200    | Download do DOCX                       |
+| GET    | `/api/v1/user/data`               | 200    | Exportação de dados pessoais (LGPD)    |
+| POST   | `/api/v1/user/consent`            | 200    | Registro de consentimento (LGPD)       |
+| DELETE | `/api/v1/user/data`               | 200    | Exclusão/anonimização de dados (LGPD)  |
 
 Todos os endpoints requerem autenticação via Bearer token (Keycloak JWT).
+
+### LGPD Compliance (Lei 13.709/2018)
+
+A plataforma atende aos seguintes direitos do titular de dados:
+
+| Direito (Art. 18) | Implementação |
+|--------------------|---------------|
+| **Portabilidade** (V) | `GET /api/v1/user/data` — exporta todos os dados em JSON |
+| **Eliminação** (VI) | `DELETE /api/v1/user/data` — anonimiza dados pessoais irreversivelmente |
+| **Consentimento** (Art. 7) | `POST /api/v1/user/consent` — registra aceite com timestamp |
+
+**Processo de exclusão de dados:**
+1. Dados pessoais do User são anonimizados (nome → "USUÁRIO REMOVIDO", email → hash)
+2. Conteúdo dos documentos é removido (mantém metadados para auditoria)
+3. Arquivos no S3 recebem soft delete (tag `deleted=true`)
+4. IPs nos audit logs são anonimizados (→ `0.0.0.0`)
+5. PII nos detalhes JSON dos audit logs é removida
+6. Registro de auditoria da exclusão é criado (compliance Art. 16, I)
 
 ## Variáveis de ambiente
 
