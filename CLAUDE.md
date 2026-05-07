@@ -83,6 +83,20 @@ Typed exception hierarchy in `br.com.contratoai.exception`:
 - `ClaudeApiException` → 503 Service Unavailable
 - Any other `RuntimeException` → 500 with generic message.
 
+## Git workflow
+
+**NEVER push directly to `main` or `develop`.** Both branches are protected and only accept merges via approved PRs.
+
+To implement any change:
+
+1. Create a feature branch from `develop`: `git checkout develop && git checkout -b feature/short-description`
+2. Commit your changes on the feature branch
+3. Push the feature branch: `git push -u origin feature/short-description`
+4. A GitHub Action automatically creates a PR `feature/* → develop`
+5. After approval and merge into `develop`, another Action creates a PR `develop → main`
+
+Branch naming: `feature/<short-kebab-description>` (e.g., `feature/add-stripe-webhook`, `feature/fix-pdf-export`).
+
 ## Local dev defaults
 
 `application.yml` provides dev defaults for everything except `CLAUDE_API_KEY`, `STRIPE_*`, and `R2_*`. The `dev` profile (`application-dev.yml`) only raises log levels — there is no separate dev datasource. `docker-compose.yml` + `init-db.sh` create both `contratoiadb` and `keycloakdb` in the same Postgres instance.
