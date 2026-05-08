@@ -188,6 +188,10 @@ src/main/java/br/com/contratoai/
 | GET    | `/api/v1/documents/{id}/status`   | 200    | Status da geração (polling)            |
 | GET    | `/api/v1/documents/{id}/pdf`      | 200    | Download do PDF                        |
 | GET    | `/api/v1/documents/{id}/docx`     | 200    | Download do DOCX                       |
+| POST   | `/api/v1/documents/{id}/signatures` | 201  | Enviar documento para assinatura       |
+| GET    | `/api/v1/documents/{id}/signatures` | 200  | Listar assinaturas do documento        |
+| POST   | `/api/v1/documents/{id}/signatures/{sigId}/sign` | 200 | Registrar assinatura       |
+| DELETE | `/api/v1/documents/{id}/signatures` | 204  | Cancelar envio para assinatura         |
 | GET    | `/api/v1/user/data`               | 200    | Exportação de dados pessoais (LGPD)    |
 | POST   | `/api/v1/user/consent`            | 200    | Registro de consentimento (LGPD)       |
 | DELETE | `/api/v1/user/data`               | 200    | Exclusão/anonimização de dados (LGPD)  |
@@ -372,3 +376,66 @@ docker run -p 8080:8080 \
 | FREE       | 3        | Sim      | Nao                | Nao           | Nao |
 | PRO        | Ilimitado| Sim      | Sim                | Nao           | Nao |
 | BUSINESS   | Ilimitado| Sim      | Sim                | Sim           | Sim |
+
+## Assinatura Digital
+
+### Fluxo
+
+```
+DRAFT/FINALIZED → POST /signatures (enviar) → SIGNING
+                                                  ↓
+                         POST /signatures/{id}/sign (cada signatário)
+                                                  ↓
+                         Todos assinaram? → SIGNED
+
+Cancelar: DELETE /signatures → volta para DRAFT (só se ninguém assinou)
+```
+
+### Endpoints
+
+| Método | Endpoint | Status | Descrição |
+|--------|----------|--------|-----------|
+| POST | `/api/v1/documents/{id}/signatures` | 201 | Enviar documento para assinatura |
+| GET | `/api/v1/documents/{id}/signatures` | 200 | Listar assinaturas do documento |
+| POST | `/api/v1/documents/{id}/signatures/{sigId}/sign` | 200 | Registrar assinatura |
+| DELETE | `/api/v1/documents/{id}/signatures` | 204 | Cancelar envio para assinatura |
+
+### Regras de negócio
+
+- Apenas documentos em `DRAFT` ou `FINALIZED` podem ser enviados para assinatura
+- Não é possível adicionar o mesmo email como signatário duas vezes no mesmo documento
+- Cancelamento só é permitido se nenhuma assinatura foi completada
+- Quando todos os signatários assinam, o documento muda automaticamente para `SIGNED`
+
+### Testando localmente
+
+```bash
+# 1. Obtenha um JWT (veja seção "Obter um token JWT para testes")
+
+# 2. Gere um documento e aguarde status DRAFT
+curl -X POST "http://localhost:8080/api/v1/documents/generate" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"description": "Contrato de prestacao de servicos de TI"}'
+
+# 3. Envie para assinatura (substitua <DOC_ID>)
+curl -X POST "http://localhost:8080/api/v1/documents/<DOC_ID>/signatures" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"signers": [
+    {"signerEmail": "contratante@email.com", "signerName": "João Silva"},
+    {"signerEmail": "contratado@email.com", "signerName": "Maria Santos"}
+  ]}'
+
+# 4. Listar assinaturas
+curl "http://localhost:8080/api/v1/documents/<DOC_ID>/signatures" \
+  -H "Authorization: Bearer <TOKEN>"
+
+# 5. Registrar assinatura de um signatário (substitua <SIG_ID>)
+curl -X POST "http://localhost:8080/api/v1/documents/<DOC_ID>/signatures/<SIG_ID>/sign" \
+  -H "Authorization: Bearer <TOKEN>"
+
+# 6. Cancelar envio (só funciona se ninguém assinou)
+curl -X DELETE "http://localhost:8080/api/v1/documents/<DOC_ID>/signatures" \
+  -H "Authorization: Bearer <TOKEN>"
+```
