@@ -29,6 +29,11 @@ public enum AuditAction {
     // Plano e limites
     PLAN_LIMIT_REACHED,
 
+    // Assinatura digital
+    DOCUMENT_SENT_FOR_SIGNATURE,
+    SIGNATURE_COMPLETED,
+    SIGNATURE_CANCELLED,
+
     // Autenticação
     AUTH_ACCESS_DENIED,
 

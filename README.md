@@ -188,6 +188,10 @@ src/main/java/br/com/contratoai/
 | GET    | `/api/v1/documents/{id}/status`   | 200    | Status da geração (polling)            |
 | GET    | `/api/v1/documents/{id}/pdf`      | 200    | Download do PDF                        |
 | GET    | `/api/v1/documents/{id}/docx`     | 200    | Download do DOCX                       |
+| POST   | `/api/v1/documents/{id}/signatures` | 201  | Enviar documento para assinatura       |
+| GET    | `/api/v1/documents/{id}/signatures` | 200  | Listar assinaturas do documento        |
+| POST   | `/api/v1/documents/{id}/signatures/{sigId}/sign` | 200 | Registrar assinatura       |
+| DELETE | `/api/v1/documents/{id}/signatures` | 204  | Cancelar envio para assinatura         |
 | GET    | `/api/v1/user/data`               | 200    | Exportação de dados pessoais (LGPD)    |
 | POST   | `/api/v1/user/consent`            | 200    | Registro de consentimento (LGPD)       |
 | DELETE | `/api/v1/user/data`               | 200    | Exclusão/anonimização de dados (LGPD)  |
