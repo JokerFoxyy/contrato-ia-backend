@@ -68,7 +68,7 @@ class SignatureControllerTest {
 
         Map<String, Object> requestBody = Map.of(
             "signers", List.of(
-                Map.of("email", "signatario@email.com", "name", "Signatario Teste")
+                Map.of("signerEmail", "signatario@email.com", "signerName", "Signatario Teste")
             )
         );
 
