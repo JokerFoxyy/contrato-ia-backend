@@ -133,6 +133,20 @@ When implementing new features, follow the Red-Green-Refactor cycle:
 2. **Green** — Write the minimum code to make the test pass.
 3. **Refactor** — Clean up the code while keeping tests green.
 
+### Security First & Shift Left
+
+Security is not an afterthought — it's built into every step of development:
+
+- **Input validation** — validate and sanitize all inputs at the controller/DTO level (Bean Validation annotations). Never trust user input.
+- **Parameterized queries** — always use JPA/Spring Data named parameters. Never concatenate user input into queries.
+- **Least privilege** — services only access what they need. IAM roles, DB permissions, and API scopes follow minimal access.
+- **Dependency scanning** — CI runs `dependency-check` or equivalent on every PR. Known CVEs block merge.
+- **Secrets management** — no hardcoded secrets, tokens, or keys. Use environment variables or AWS Secrets Manager.
+- **Authentication & authorization checks** — every endpoint must be explicitly secured or explicitly marked public. Default is deny.
+- **Error messages** — never leak stack traces, internal paths, or sensitive data in API responses.
+- **Security testing in CI** — SAST (static analysis) runs on every push, not just before release. Shift security left.
+- **OWASP Top 10 awareness** — every session should consider injection, broken auth, misconfiguration, and data exposure risks.
+
 ### XP Practices
 
 - **Continuous Integration** — every push triggers build + tests + coverage.
