@@ -57,6 +57,23 @@ jobs:
           path: target/surefire-reports/
           retention-days: 7
 
+      - name: Upload JaCoCo coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/site/jacoco/
+          retention-days: 7
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f target/site/jacoco/index.html ]; then
+            echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+            echo "JaCoCo coverage report generated. Download the artifact for details." >> $GITHUB_STEP_SUMMARY
+            echo "Minimum required: **90% line coverage**" >> $GITHUB_STEP_SUMMARY
+          fi
+
   docker:
     needs: build-and-test
     runs-on: ubuntu-latest

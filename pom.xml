@@ -163,6 +163,61 @@
                     </excludes>
                 </configuration>
             </plugin>
+
+            <!-- JaCoCo — Code Coverage -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <configuration>
+                    <excludes>
+                        <!-- Exclude configs, DTOs, entities, enums, and main class -->
+                        <exclude>br/com/contratoai/ContratoIaApplication.class</exclude>
+                        <exclude>br/com/contratoai/config/**</exclude>
+                        <exclude>br/com/contratoai/domain/entity/**</exclude>
+                        <exclude>br/com/contratoai/domain/enums/**</exclude>
+                        <exclude>br/com/contratoai/dto/**</exclude>
+                        <exclude>br/com/contratoai/exception/**</exclude>
+                        <exclude>br/com/contratoai/repository/**</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.90</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
