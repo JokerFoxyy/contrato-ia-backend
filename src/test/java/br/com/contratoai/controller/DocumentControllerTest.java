@@ -206,4 +206,56 @@ class DocumentControllerTest {
         mockMvc.perform(get("/v1/documents/{id}", UUID.randomUUID()))
             .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("GET /v1/documents/{id}/status - should return document status")
+    void getDocumentStatus_success() throws Exception {
+        UUID docId = UUID.randomUUID();
+        var statusDTO = new br.com.contratoai.dto.DocumentStatusDTO(
+            docId, DocumentStatus.DRAFT, null, null, LocalDateTime.now()
+        );
+        when(documentService.getDocumentStatus(eq(docId), any())).thenReturn(statusDTO);
+
+        mockMvc.perform(get("/v1/documents/{id}/status", docId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(docId.toString()))
+            .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    @Test
+    @DisplayName("GET /v1/documents/{id}/pdf - should return PDF bytes with correct headers")
+    void downloadPdf_success() throws Exception {
+        UUID docId = UUID.randomUUID();
+        byte[] pdfBytes = new byte[]{37, 80, 68, 70}; // %PDF
+        when(documentService.exportPdf(eq(docId), any())).thenReturn(pdfBytes);
+
+        mockMvc.perform(get("/v1/documents/{id}/pdf", docId))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Disposition", "attachment; filename=\"contrato-" + docId + ".pdf\""))
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andExpect(content().bytes(pdfBytes));
+    }
+
+    @Test
+    @DisplayName("GET /v1/documents/{id}/docx - should return DOCX bytes with correct headers")
+    void downloadDocx_success() throws Exception {
+        UUID docId = UUID.randomUUID();
+        byte[] docxBytes = new byte[]{80, 75, 3, 4}; // PK
+        when(documentService.exportDocx(eq(docId), any())).thenReturn(docxBytes);
+
+        mockMvc.perform(get("/v1/documents/{id}/docx", docId))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Disposition", "attachment; filename=\"contrato-" + docId + ".docx\""))
+            .andExpect(content().bytes(docxBytes));
+    }
+
+    @Test
+    @DisplayName("GET /v1/documents/{id}/pdf - should return 404 when document not found")
+    void downloadPdf_notFound() throws Exception {
+        when(documentService.exportPdf(any(UUID.class), any()))
+            .thenThrow(new DocumentNotFoundException("Documento não encontrado"));
+
+        mockMvc.perform(get("/v1/documents/{id}/pdf", UUID.randomUUID()))
+            .andExpect(status().isNotFound());
+    }
 }
