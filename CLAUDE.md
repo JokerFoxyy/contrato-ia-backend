@@ -97,6 +97,56 @@ To implement any change:
 
 Branch naming: `feature/<short-kebab-description>` (e.g., `feature/add-stripe-webhook`, `feature/fix-pdf-export`).
 
+## Quality Standards
+
+### Documentation — Always Up to Date
+
+**CLAUDE.md and README.md must always reflect the current state of the codebase.** Every session that changes code, architecture, dependencies, commands, or conventions **MUST** update the relevant documentation in the same commit or PR. Never leave docs stale — if you add a new endpoint, migration, service, env var, or change behavior, update the docs immediately. Documentation is not a follow-up task; it's part of the definition of done.
+
+### Testing — Mandatory for every session
+
+Every feature or change **MUST** include tests before being considered complete:
+
+1. **Unit tests** for all services and controllers (using `@WebMvcTest` with `MockMvc` for controllers, `@ExtendWith(MockitoExtension.class)` for services).
+2. **Integration tests** where applicable (using `@SpringBootTest` with test containers or H2).
+3. **Minimum 90% line coverage** — enforced by JaCoCo in the `verify` phase. PRs below threshold are blocked.
+
+Test naming convention: `methodName_shouldExpectedBehavior_whenCondition` (e.g., `generate_shouldThrowPlanLimitExceeded_whenFreeUserExceedsLimit`).
+
+Mock external dependencies (Claude API, S3, SQS, Keycloak) — tests must be fast and isolated.
+
+### Clean Code & Best Practices
+
+Follow these principles in every session:
+
+- **Single Responsibility** — each service/controller does one thing well.
+- **Meaningful names** — no abbreviations; classes, methods, and variables reveal intent.
+- **Small methods** — extract logic into well-named private methods; keep public methods readable.
+- **DRY** — reuse services and utility methods; don't duplicate logic across controllers or services.
+- **YAGNI** — implement what's needed now, not speculative features.
+- **Refactor continuously** — every session should leave the codebase cleaner than it was found.
+
+### Security First & Shift Left
+
+Security is built into every step of development, not added at the end:
+
+- **Validate all input** — use `@Valid` and Bean Validation annotations on every request DTO.
+- **No secrets in code** — API keys, tokens, and credentials go in env vars or AWS Secrets Manager (never committed).
+- **SQL injection prevention** — always use parameterized queries via JPA/Spring Data. Never concatenate user input into queries.
+- **Auth on every endpoint** — `SecurityConfig` denies by default. New endpoints must be explicitly authorized.
+- **Dependency scanning** — CI runs CodeQL, Trivy, and dependency review on every PR. Known CVEs block merge.
+- **Audit logging** — security-sensitive operations (delete, export, consent) must be logged via `AuditService`.
+- **Minimal data exposure** — DTOs expose only what the client needs. Never return entities directly.
+- **Shift left** — security checks (SAST, dependency audit) run on every push, not just before release.
+
+### TDD Workflow
+
+When implementing new features, follow the Red-Green-Refactor cycle:
+
+1. **Red** — Write a failing test for the expected behavior.
+2. **Green** — Write the minimum code to make it pass.
+3. **Refactor** — Clean up while keeping tests green.
+
 ## Local dev defaults
 
 `application.yml` provides dev defaults for everything except `CLAUDE_API_KEY`, `STRIPE_*`, and `R2_*`. The `dev` profile (`application-dev.yml`) only raises log levels — there is no separate dev datasource. `docker-compose.yml` + `init-db.sh` create both `contratoiadb` and `keycloakdb` in the same Postgres instance.
