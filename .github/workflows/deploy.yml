@@ -16,17 +16,16 @@ on:
         default: 'latest'
 
 permissions:
-  id-token: write
   contents: read
 
 env:
   AWS_REGION: sa-east-1
-  ECR_REPOSITORY: contrato-ia-backend
-  ECS_CLUSTER: contrato-ia
-  ECS_SERVICE_STAGING: contrato-ia-backend-staging
-  ECS_SERVICE_PRODUCTION: contrato-ia-backend-production
-  TASK_DEFINITION_STAGING: .aws/task-definition-staging.json
-  TASK_DEFINITION_PRODUCTION: .aws/task-definition-production.json
+  GHCR_IMAGE: ghcr.io/${{ github.repository }}
+  DEPLOY_BUCKET: contrato-ia-deploy-artifacts
+  CODEDEPLOY_APP_STAGING: contrato-ia-staging-backend
+  CODEDEPLOY_APP_PRODUCTION: contrato-ia-production-backend
+  CODEDEPLOY_GROUP_STAGING: contrato-ia-staging-backend-dg
+  CODEDEPLOY_GROUP_PRODUCTION: contrato-ia-production-backend-dg
 
 jobs:
   deploy:
@@ -40,58 +39,65 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Pull from GHCR and push to ECR
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
-        run: |
-          GHCR_IMAGE=ghcr.io/${{ github.repository }}:${IMAGE_TAG}
-          ECR_IMAGE=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
-
-          docker pull $GHCR_IMAGE
-          docker tag $GHCR_IMAGE $ECR_IMAGE
-          docker push $ECR_IMAGE
-
-          echo "ecr_image=$ECR_IMAGE" >> $GITHUB_OUTPUT
-
-      - name: Select task definition
-        id: task-def-file
+      - name: Determine deployment config
+        id: config
         run: |
           if [ "${{ inputs.environment }}" = "production" ]; then
-            echo "file=${{ env.TASK_DEFINITION_PRODUCTION }}" >> $GITHUB_OUTPUT
-            echo "service=${{ env.ECS_SERVICE_PRODUCTION }}" >> $GITHUB_OUTPUT
+            echo "codedeploy_app=${{ env.CODEDEPLOY_APP_PRODUCTION }}" >> $GITHUB_OUTPUT
+            echo "deployment_group=${{ env.CODEDEPLOY_GROUP_PRODUCTION }}" >> $GITHUB_OUTPUT
           else
-            echo "file=${{ env.TASK_DEFINITION_STAGING }}" >> $GITHUB_OUTPUT
-            echo "service=${{ env.ECS_SERVICE_STAGING }}" >> $GITHUB_OUTPUT
+            echo "codedeploy_app=${{ env.CODEDEPLOY_APP_STAGING }}" >> $GITHUB_OUTPUT
+            echo "deployment_group=${{ env.CODEDEPLOY_GROUP_STAGING }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Update ECS task definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ${{ steps.task-def-file.outputs.file }}
-          container-name: contrato-ia-backend
-          image: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+      - name: Prepare deployment bundle
+        run: |
+          # Write the full GHCR image reference for the EC2 to pull
+          echo "${{ env.GHCR_IMAGE }}:${{ inputs.image_tag }}" > IMAGE_TAG
 
-      - name: Deploy to Amazon ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-        with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ steps.task-def-file.outputs.service }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
+          # Create deployment archive with appspec + scripts + IMAGE_TAG
+          zip -r deploy-bundle.zip \
+            appspec.yml \
+            scripts/codedeploy/ \
+            IMAGE_TAG
+
+      - name: Upload bundle to S3
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          S3_KEY="${{ inputs.environment }}/${TIMESTAMP}-deploy-bundle.zip"
+          aws s3 cp deploy-bundle.zip "s3://${{ env.DEPLOY_BUCKET }}/${S3_KEY}"
+          echo "S3_KEY=${S3_KEY}" >> $GITHUB_ENV
+
+      - name: Create CodeDeploy deployment
+        id: deploy
+        run: |
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name "${{ steps.config.outputs.codedeploy_app }}" \
+            --deployment-group-name "${{ steps.config.outputs.deployment_group }}" \
+            --s3-location "bucket=${{ env.DEPLOY_BUCKET }},key=${S3_KEY},bundleType=zip" \
+            --description "Deploy ${{ inputs.image_tag }} to ${{ inputs.environment }} via GitHub Actions" \
+            --query 'deploymentId' --output text)
+
+          echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+          echo ">>> Deployment created: $DEPLOYMENT_ID"
+
+      - name: Wait for deployment to complete
+        run: |
+          echo ">>> Waiting for deployment ${{ steps.deploy.outputs.deployment_id }}..."
+          aws deploy wait deployment-successful \
+            --deployment-id "${{ steps.deploy.outputs.deployment_id }}"
+          echo ">>> Deployment successful!"
 
       - name: Summary
+        if: always()
         run: |
           echo "## Deploy Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image:** ${{ inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cluster:** ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service:** ${{ steps.task-def-file.outputs.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** ${{ env.GHCR_IMAGE }}:${{ inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment ID:** ${{ steps.deploy.outputs.deployment_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **CodeDeploy App:** ${{ steps.config.outputs.codedeploy_app }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Group:** ${{ steps.config.outputs.deployment_group }}" >> $GITHUB_STEP_SUMMARY
