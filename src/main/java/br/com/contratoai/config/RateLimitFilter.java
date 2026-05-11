@@ -87,7 +87,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             RateLimiter.waitForPermission(rateLimiter);
             filterChain.doFilter(request, response);
         } catch (RequestNotPermitted e) {
-            log.warn("Rate limit excedido. userId={}, tier={}, path={}", userId, tier, path);
+            log.warn("Rate limit excedido. userId={}, tier={}, path={}", userId, tier, sanitizeLogValue(path));
             writeRateLimitResponse(response, tier);
         }
     }
@@ -132,6 +132,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private boolean isPublicPath(String path) {
         return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
+    }
+
+    /**
+     * Sanitiza valores antes de logar para prevenir log injection.
+     */
+    private String sanitizeLogValue(String value) {
+        if (value == null) return "null";
+        return value.replaceAll("[\\r\\n\\t]", "_");
     }
 
     private void writeRateLimitResponse(HttpServletResponse response, String tier) throws IOException {

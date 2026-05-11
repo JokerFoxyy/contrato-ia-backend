@@ -31,7 +31,10 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .csrf(csrf -> csrf.disable())
+            // CSRF disabled: this is a stateless REST API using JWT Bearer tokens.
+            // No cookies or sessions are used, so CSRF attacks are not applicable.
+            // See: https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html#csrf-when
+            .csrf(csrf -> csrf.disable()) // lgtm[java/spring-disabled-csrf-protection]
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth

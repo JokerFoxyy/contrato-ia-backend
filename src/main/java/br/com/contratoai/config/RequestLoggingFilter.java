@@ -66,7 +66,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
             if (!isIgnoredPath(path)) {
                 log.info("HTTP {} {} {} {}ms [ip={}]",
-                    method, path, response.getStatus(), duration, clientIp);
+                    method, sanitizeLogValue(path), response.getStatus(), duration, sanitizeLogValue(clientIp));
             }
 
             // Limpa o MDC para evitar leak entre requests (thread pool)
@@ -95,5 +95,14 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
     private boolean isIgnoredPath(String path) {
         return IGNORED_PATHS.stream().anyMatch(path::startsWith);
+    }
+
+    /**
+     * Sanitiza valores antes de logar para prevenir log injection.
+     * Remove caracteres de controle (newlines, tabs, carriage returns).
+     */
+    private String sanitizeLogValue(String value) {
+        if (value == null) return "null";
+        return value.replaceAll("[\\r\\n\\t]", "_");
     }
 }

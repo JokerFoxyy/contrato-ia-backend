@@ -64,7 +64,7 @@ public class PdfGenerationService {
         String bodyHtml = htmlRenderer.render(document);
 
         String today = LocalDate.now()
-                .format(DateTimeFormatter.ofPattern("dd 'de' MMMM 'de' yyyy", new Locale("pt", "BR")));
+                .format(DateTimeFormatter.ofPattern("dd 'de' MMMM 'de' yyyy", Locale.of("pt", "BR")));
 
         // Template XHTML valido (requisito do Flying Saucer)
         return """

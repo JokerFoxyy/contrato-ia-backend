@@ -32,7 +32,7 @@ CI (`.github/workflows/ci.yml`) runs on JDK 21 with a Postgres 16 service contai
 
 ## Architecture
 
-Spring Boot 3.2 monolith. Single Maven module, package root `br.com.contratoai`, entry point `ContratoIaApplication`.
+Spring Boot 3.5 monolith. Single Maven module, package root `br.com.contratoai`, entry point `ContratoIaApplication`.
 
 ### Request flow for the core feature (AI document generation)
 
@@ -98,6 +98,17 @@ To implement any change:
 Branch naming: `feature/<short-kebab-description>` (e.g., `feature/add-stripe-webhook`, `feature/fix-pdf-export`).
 
 ## Quality Standards
+
+### Documentation — Always Up to Date
+
+Every session that changes code **MUST** update documentation in the same commit/PR:
+
+- **CLAUDE.md** — update architecture notes, commands, version numbers, or conventions if they changed.
+- **README.md** — update setup instructions, feature lists, or configuration guides if affected.
+- **Code comments** — keep Javadoc and inline comments accurate; remove stale comments.
+- **API docs** — if endpoints change, update Swagger annotations and examples.
+
+Documentation is not a follow-up task — it ships with the code.
 
 ### Testing — Mandatory for every session
 
