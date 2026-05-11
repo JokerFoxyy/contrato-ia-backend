@@ -87,7 +87,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             RateLimiter.waitForPermission(rateLimiter);
             filterChain.doFilter(request, response);
         } catch (RequestNotPermitted e) {
-            log.warn("Rate limit excedido. userId={}, tier={}, path={}", userId, tier, sanitizeLogValue(path));
+            log.warn("Rate limit excedido. userId={}, tier={}, path={}", sanitizeLogValue(userId), sanitizeLogValue(tier), sanitizeLogValue(path));
             writeRateLimitResponse(response, tier);
         }
     }
