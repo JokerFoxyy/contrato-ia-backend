@@ -20,10 +20,10 @@
     <properties>
         <java.version>21</java.version>
         <openpdf.version>2.0.3</openpdf.version>
-        <flyingsaucer.version>9.12.0</flyingsaucer.version>
+        <flyingsaucer.version>9.4.0</flyingsaucer.version>
         <commonmark.version>0.24.0</commonmark.version>
         <poi.version>5.4.1</poi.version>
-        <stripe.version>29.2.0</stripe.version>
+        <stripe.version>29.1.0</stripe.version>
         <awssdk.version>2.31.52</awssdk.version>
     </properties>
 
