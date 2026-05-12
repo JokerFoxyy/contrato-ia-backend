@@ -28,6 +28,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.net.URL;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -540,5 +541,137 @@ class DocumentServiceTest {
 
         assertThatThrownBy(() -> documentService.exportPdf(docId, jwt))
             .isInstanceOf(DocumentNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("exportPdf - should throw when content is blank")
+    void exportPdf_blankContent() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .generatedContent("  ")
+            .status(DocumentStatus.DRAFT)
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+
+        assertThatThrownBy(() -> documentService.exportPdf(docId, jwt))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("sem conteúdo gerado");
+    }
+
+    @Test
+    @DisplayName("exportPdf - should throw when content integrity check fails")
+    void exportPdf_integrityCheckFails() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .generatedContent("Conteudo gerado")
+            .contentHash("hash-invalido")
+            .status(DocumentStatus.DRAFT)
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+        when(contentIntegrityService.verifyIntegrity("Conteudo gerado", "hash-invalido")).thenReturn(false);
+
+        assertThatThrownBy(() -> documentService.exportPdf(docId, jwt))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("integridade");
+    }
+
+    // === Presigned URL tests ===
+
+    @Test
+    @DisplayName("getPdfPresignedUrl - should return URL when S3 key exists")
+    void getPdfPresignedUrl_withKey() throws Exception {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .generatedContent("Conteudo")
+            .pdfS3Key("documents/user1/doc1/file.pdf")
+            .status(DocumentStatus.DRAFT)
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+        when(s3StorageService.generatePresignedUrl("documents/user1/doc1/file.pdf"))
+            .thenReturn(new URL("https://s3.amazonaws.com/bucket/file.pdf?signed=true"));
+
+        String result = documentService.getPdfPresignedUrl(docId, jwt);
+        assertThat(result).contains("s3.amazonaws.com");
+    }
+
+    @Test
+    @DisplayName("getPdfPresignedUrl - should return null when no S3 key")
+    void getPdfPresignedUrl_withoutKey() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .generatedContent("Conteudo")
+            .status(DocumentStatus.DRAFT)
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+
+        String result = documentService.getPdfPresignedUrl(docId, jwt);
+        assertThat(result).isNull();
+    }
+
+    @Test
+    @DisplayName("getDocxPresignedUrl - should return URL when S3 key exists")
+    void getDocxPresignedUrl_withKey() throws Exception {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .generatedContent("Conteudo")
+            .docxS3Key("documents/user1/doc1/file.docx")
+            .status(DocumentStatus.DRAFT)
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+        when(s3StorageService.generatePresignedUrl("documents/user1/doc1/file.docx"))
+            .thenReturn(new URL("https://s3.amazonaws.com/bucket/file.docx?signed=true"));
+
+        String result = documentService.getDocxPresignedUrl(docId, jwt);
+        assertThat(result).contains("s3.amazonaws.com");
+    }
+
+    @Test
+    @DisplayName("getDocxPresignedUrl - should return null when no S3 key")
+    void getDocxPresignedUrl_withoutKey() {
+        UUID docId = UUID.randomUUID();
+        Document doc = Document.builder()
+            .id(docId)
+            .user(user)
+            .title("Contrato")
+            .userDescription("descricao")
+            .generatedContent("Conteudo")
+            .status(DocumentStatus.DRAFT)
+            .build();
+
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(documentRepository.findByIdAndUserId(docId, user.getId())).thenReturn(Optional.of(doc));
+
+        String result = documentService.getDocxPresignedUrl(docId, jwt);
+        assertThat(result).isNull();
     }
 }

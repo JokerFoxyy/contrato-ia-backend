@@ -32,7 +32,7 @@ CI (`.github/workflows/ci.yml`) runs on JDK 21 with a Postgres 16 service contai
 
 ## Architecture
 
-Spring Boot 3.2 monolith. Single Maven module, package root `br.com.contratoai`, entry point `ContratoIaApplication`.
+Spring Boot 3.5 monolith. Single Maven module, package root `br.com.contratoai`, entry point `ContratoIaApplication`.
 
 ### Request flow for the core feature (AI document generation)
 
@@ -96,6 +96,103 @@ To implement any change:
 5. After approval and merge into `develop`, another Action creates a PR `develop → main`
 
 Branch naming: `feature/<short-kebab-description>` (e.g., `feature/add-stripe-webhook`, `feature/fix-pdf-export`).
+
+## Quality Standards
+
+### Documentation — Always Up to Date
+
+**CLAUDE.md and README.md must always reflect the current state of the codebase.** Every session that changes code, architecture, dependencies, commands, or conventions **MUST** update the relevant documentation in the same commit or PR. Never leave docs stale — if you add a new endpoint, migration, service, env var, or change behavior, update the docs immediately. Documentation is not a follow-up task; it's part of the definition of done.
+
+### Testing — Mandatory for every session
+
+Every feature or change **MUST** include tests before being considered complete:
+
+1. **Unit tests** for all services and controllers (using `@WebMvcTest` with `MockMvc` for controllers, `@ExtendWith(MockitoExtension.class)` for services).
+2. **Integration tests** where applicable (using `@SpringBootTest` with test containers or H2).
+3. **Minimum 90% line coverage** — enforced by JaCoCo in the `verify` phase. PRs below threshold are blocked.
+
+Test naming convention: `methodName_shouldExpectedBehavior_whenCondition` (e.g., `generate_shouldThrowPlanLimitExceeded_whenFreeUserExceedsLimit`).
+
+Mock external dependencies (Claude API, S3, SQS, Keycloak) — tests must be fast and isolated.
+=======
+1. **Unit tests** for all service classes, covering business rules, edge cases, and error paths.
+2. **Integration tests** for controllers (using `@WebMvcTest` or `@SpringBootTest` with `MockMvc`) to validate HTTP contracts, status codes, and request/response serialization.
+3. **Repository tests** (using `@DataJpaTest`) for custom queries and complex persistence logic.
+4. **Minimum 90% code coverage** — enforced by CI via JaCoCo. PRs below threshold are blocked.
+
+Test naming convention: `should<ExpectedBehavior>_when<Condition>` (e.g., `shouldReturnForbidden_whenPlanLimitExceeded`).
+
+Use `@WithMockUser` or custom JWT test helpers for secured endpoints — never skip security in tests.
+
+### Clean Code & Best Practices
+
+Follow these principles in every session:
+
+- **Single Responsibility** — each service/controller does one thing well.
+- **Meaningful names** — no abbreviations; classes, methods, and variables reveal intent.
+- **Small methods** — extract logic into well-named private methods; keep public methods readable.
+- **DRY** — reuse services and utility methods; don't duplicate logic across controllers or services.
+- **YAGNI** — implement what's needed now, not speculative features.
+- **Refactor continuously** — every session should leave the codebase cleaner than it was found.
+
+### Security First & Shift Left
+
+Security is built into every step of development, not added at the end:
+
+- **Validate all input** — use `@Valid` and Bean Validation annotations on every request DTO.
+- **No secrets in code** — API keys, tokens, and credentials go in env vars or AWS Secrets Manager (never committed).
+- **SQL injection prevention** — always use parameterized queries via JPA/Spring Data. Never concatenate user input into queries.
+- **Auth on every endpoint** — `SecurityConfig` denies by default. New endpoints must be explicitly authorized.
+- **Dependency scanning** — CI runs CodeQL, Trivy, and dependency review on every PR. Known CVEs block merge.
+- **Audit logging** — security-sensitive operations (delete, export, consent) must be logged via `AuditService`.
+- **Minimal data exposure** — DTOs expose only what the client needs. Never return entities directly.
+- **Shift left** — security checks (SAST, dependency audit) run on every push, not just before release.
+
+### TDD Workflow
+
+When implementing new features, follow the Red-Green-Refactor cycle:
+
+1. **Red** — Write a failing test for the expected behavior.
+2. **Green** — Write the minimum code to make it pass.
+3. **Refactor** — Clean up while keeping tests green.
+=======
+- **Single Responsibility Principle (SRP)** — each class/method does one thing well.
+- **Meaningful names** — no abbreviations, variables and methods should reveal intent.
+- **Small methods** — max ~20 lines; extract helpers when logic gets complex.
+- **No magic numbers/strings** — use constants or enums.
+- **DRY** — extract shared logic into utility classes or base classes, but don't over-abstract.
+- **YAGNI** — don't build features "for the future"; implement what's needed now.
+- **Fail fast** — validate inputs early, throw typed exceptions.
+- **Refactor continuously** — every session should leave the codebase cleaner than it was found.
+
+### TDD Workflow
+
+When implementing new features, follow the Red-Green-Refactor cycle:
+
+1. **Red** — Write a failing test that describes the expected behavior.
+2. **Green** — Write the minimum code to make the test pass.
+3. **Refactor** — Clean up the code while keeping tests green.
+
+### Security First & Shift Left
+
+Security is not an afterthought — it's built into every step of development:
+
+- **Input validation** — validate and sanitize all inputs at the controller/DTO level (Bean Validation annotations). Never trust user input.
+- **Parameterized queries** — always use JPA/Spring Data named parameters. Never concatenate user input into queries.
+- **Least privilege** — services only access what they need. IAM roles, DB permissions, and API scopes follow minimal access.
+- **Dependency scanning** — CI runs `dependency-check` or equivalent on every PR. Known CVEs block merge.
+- **Secrets management** — no hardcoded secrets, tokens, or keys. Use environment variables or AWS Secrets Manager.
+- **Authentication & authorization checks** — every endpoint must be explicitly secured or explicitly marked public. Default is deny.
+- **Error messages** — never leak stack traces, internal paths, or sensitive data in API responses.
+- **Security testing in CI** — SAST (static analysis) runs on every push, not just before release. Shift security left.
+- **OWASP Top 10 awareness** — every session should consider injection, broken auth, misconfiguration, and data exposure risks.
+
+### XP Practices
+
+- **Continuous Integration** — every push triggers build + tests + coverage.
+- **Small commits** — each commit is a coherent, reviewable unit of work.
+- **Collective code ownership** — any code can be improved in any session.
+- **Simple design** — the simplest solution that works is the best solution.
 
 ## Local dev defaults
 
