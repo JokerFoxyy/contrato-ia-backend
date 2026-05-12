@@ -90,7 +90,7 @@ public class DocxGenerationService {
 
         // Data
         String today = LocalDate.now()
-                .format(DateTimeFormatter.ofPattern("dd 'de' MMMM 'de' yyyy", new Locale("pt", "BR")));
+                .format(DateTimeFormatter.ofPattern("dd 'de' MMMM 'de' yyyy", Locale.of("pt", "BR")));
 
         XWPFParagraph dateParagraph = document.createParagraph();
         dateParagraph.setAlignment(ParagraphAlignment.CENTER);

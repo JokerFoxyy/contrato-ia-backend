@@ -16,6 +16,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@ToString(of = {"id", "signerEmail", "status"})
 public class Signature {
 
     @Id
